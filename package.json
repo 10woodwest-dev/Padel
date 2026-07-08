@@ -1,0 +1,18 @@
+{
+  "name": "padel-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Ultra-realistic playable padel game prototype (Three.js + custom physics)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.165.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0"
+  }
+}

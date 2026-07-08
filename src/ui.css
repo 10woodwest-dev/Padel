@@ -1,0 +1,155 @@
+/* ============================================================================
+   ui.css — HUD, start screen, pause menu. The game canvas sits behind
+   #ui-root; UI layers use pointer-events only where interactive.
+   ========================================================================== */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body, #app {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: #0d1522;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  color: #eef3f7;
+}
+
+#game-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+#ui-root { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
+#ui-root > * { pointer-events: none; }
+
+/* ---------- score HUD ---------- */
+.hud-score {
+  position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+  background: rgba(10, 16, 24, 0.82);
+  border: 1px solid rgba(150, 190, 220, 0.25);
+  border-radius: 10px;
+  padding: 8px 18px 10px;
+  text-align: center;
+  min-width: 260px;
+  backdrop-filter: blur(4px);
+}
+.hud-score .teams { display: flex; justify-content: space-between; gap: 18px; font-size: 12px; letter-spacing: 0.06em; color: #9fb8cc; text-transform: uppercase; }
+.hud-score .team-name.serving::before { content: "●"; color: #d8f24b; margin-right: 5px; font-size: 10px; }
+.hud-score .points { font-size: 26px; font-weight: 700; margin-top: 2px; letter-spacing: 0.04em; }
+.hud-score .games { font-size: 12px; color: #b9cbdb; margin-top: 2px; }
+.hud-score .serve-info { font-size: 11px; color: #7f97ab; margin-top: 3px; }
+
+/* ---------- centre message banner ---------- */
+.hud-message {
+  position: absolute; top: 26%; left: 50%; transform: translate(-50%, -50%);
+  font-size: 30px; font-weight: 800; letter-spacing: 0.06em;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+  opacity: 0; transition: opacity 0.18s ease;
+  text-align: center;
+  white-space: nowrap;
+}
+.hud-message.show { opacity: 1; }
+.hud-message.good { color: #a5e75f; }
+.hud-message.bad { color: #ff7a6e; }
+.hud-message.info { color: #ffd76e; }
+
+/* ---------- shot feedback ---------- */
+.hud-feedback {
+  position: absolute; bottom: 17%; left: 50%; transform: translateX(-50%);
+  font-size: 17px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+  opacity: 0; transition: opacity 0.12s ease; text-shadow: 0 1px 8px rgba(0,0,0,0.9);
+}
+.hud-feedback.show { opacity: 0.95; }
+.hud-feedback.q-perfect { color: #7df2c8; }
+.hud-feedback.q-good { color: #c9e97a; }
+.hud-feedback.q-poor { color: #f5b06e; }
+
+/* ---------- stamina ---------- */
+.hud-stamina {
+  position: absolute; bottom: 22px; left: 50%; transform: translateX(-50%);
+  width: 170px; height: 7px; border-radius: 4px;
+  background: rgba(12, 18, 26, 0.75); border: 1px solid rgba(150,190,220,0.25);
+  overflow: hidden;
+}
+.hud-stamina .fill { height: 100%; width: 100%; background: linear-gradient(90deg, #63d471, #b7e778); transition: width 0.15s linear; }
+.hud-stamina .fill.low { background: linear-gradient(90deg, #e0653e, #f0a35a); }
+
+/* ---------- corner hints ---------- */
+.hud-hints {
+  position: absolute; bottom: 14px; right: 16px;
+  font-size: 11px; color: #7d92a5; text-align: right; line-height: 1.55;
+}
+.hud-hints b { color: #b8cddd; font-weight: 600; }
+
+/* ---------- debug panel ---------- */
+.hud-debug {
+  position: absolute; top: 14px; left: 14px;
+  background: rgba(8, 12, 18, 0.85);
+  border: 1px solid rgba(120, 220, 170, 0.3);
+  font: 11px/1.5 ui-monospace, Menlo, Consolas, monospace;
+  color: #9ff2c5; padding: 8px 12px; border-radius: 8px; white-space: pre;
+}
+
+/* ---------- full-screen overlays (start / pause) ---------- */
+.overlay {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(6, 10, 16, 0.78);
+  pointer-events: auto !important;
+  backdrop-filter: blur(5px);
+}
+.panel {
+  background: #101a26;
+  border: 1px solid rgba(150, 190, 220, 0.25);
+  border-radius: 14px;
+  padding: 28px 34px;
+  max-width: 720px; width: min(92vw, 720px);
+  max-height: 88vh; overflow: auto;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+}
+.panel h1 { font-size: 30px; letter-spacing: 0.03em; margin-bottom: 2px; }
+.panel h1 span { color: #d8f24b; }
+.panel .subtitle { color: #8ba3b8; font-size: 13px; margin-bottom: 18px; }
+.panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em; color: #9fb8cc; margin: 16px 0 8px; }
+
+.option-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.option-row button {
+  pointer-events: auto;
+  background: #182636; color: #cfe0ee; border: 1px solid rgba(150,190,220,0.28);
+  padding: 7px 14px; border-radius: 8px; font-size: 13px; cursor: pointer;
+}
+.option-row button:hover { background: #22364c; }
+.option-row button.selected { background: #2c4a68; border-color: #d8f24b; color: #fff; }
+
+.controls-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 3px 26px;
+  font-size: 12.5px; color: #b9cbdb;
+}
+.controls-grid div b {
+  display: inline-block; min-width: 84px; color: #e8f0f6; font-weight: 600;
+}
+
+.big-btn {
+  pointer-events: auto;
+  margin-top: 20px; width: 100%;
+  background: linear-gradient(180deg, #86c33c, #5f9a25);
+  color: #0c1408; font-size: 17px; font-weight: 800; letter-spacing: 0.08em;
+  border: none; border-radius: 10px; padding: 13px; cursor: pointer;
+  text-transform: uppercase;
+}
+.big-btn:hover { filter: brightness(1.1); }
+.menu-btn {
+  pointer-events: auto;
+  margin-top: 10px; width: 100%;
+  background: #182636; color: #cfe0ee; border: 1px solid rgba(150,190,220,0.28);
+  font-size: 14px; border-radius: 10px; padding: 10px; cursor: pointer;
+}
+.menu-btn:hover { background: #22364c; }
+
+.roster-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.roster-card {
+  pointer-events: auto;
+  background: #16222f; border: 1px solid rgba(150,190,220,0.22); border-radius: 10px;
+  padding: 10px 12px; cursor: pointer; font-size: 12px; color: #b9cbdb;
+}
+.roster-card:hover { background: #1d2e40; }
+.roster-card.selected { border-color: #d8f24b; background: #24384e; }
+.roster-card .rname { font-weight: 700; color: #eef3f7; font-size: 13px; }
+.roster-card .rarch { color: #8ba3b8; font-size: 11px; margin: 2px 0 6px; }
+.roster-card .rstat { display: flex; justify-content: space-between; font-size: 10.5px; }
