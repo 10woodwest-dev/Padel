@@ -88,7 +88,10 @@ export class Player {
   /** Begin a swing. The sim loop calls tryContact() each physics step while
    *  the window is open; on success main.js executes the shot. */
   startSwing(shotKey, aim, power = 0.6) {
-    if (this.swing && !this.swing.done) return false;
+    // one swing at a time, and no re-arming during follow-through/recovery —
+    // otherwise mashing the button lets you hit your own outgoing ball
+    // (an instant "double hit" point loss) and whiffs carry no cost
+    if (this.swing || this.inRecovery()) return false;
     const def = SHOTS[shotKey];
     const overhead = def.tags.includes('overhead');
     this.swing = {
@@ -106,8 +109,11 @@ export class Player {
   cancelSwing() { this.swing = null; }
 
   /** Check whether the ball is contactable right now; returns contact info or
-   *  null. Called by the sim loop during the active window. */
-  tryContact(ballPos) {
+   *  null. Called by the sim loop during the active window.
+   *  @param ballVel pass the ball velocity so the swing can WAIT for an
+   *  approaching ball to reach the sweet spot instead of poking it at
+   *  maximum stretch the instant it enters reach. */
+  tryContact(ballPos, ballVel = null) {
     const sw = this.swing;
     if (!sw || sw.done) return null;
     if (sw.elapsed < sw.windup) return null;
@@ -125,11 +131,24 @@ export class Player {
     const minH = Math.max(0.03, def.contact[0] - 0.25);
     if (dist > this.reach() || ballPos.y > maxH || ballPos.y < minH) return null;
 
-    // timing score: 1 at the ideal moment (just after the window opens),
-    // falling toward the edges of the active window
+    // defer contact while the ball is still closing in on the sweet spot —
+    // hitting at full stretch the moment it enters reach is exactly the
+    // "poke" a coach would scold you for
+    if (ballVel && dist > HIT.sweetSpot * 1.35) {
+      const closing = dx * ballVel.x + dz * ballVel.z < -0.1; // still approaching
+      const windowLeft = sw.windup + sw.window - sw.elapsed;
+      if (closing && windowLeft > 0.05) return null;
+    }
+
+    // timing quality: mostly geometry (how close to the sweet-spot distance
+    // the contact happens — press early and you poke at the edge of reach,
+    // press late and the ball is on top of you), plus the swing window
+    const spread = Math.max(0.25, this.reach() - HIT.sweetSpot);
+    const distQ = clamp(1 - Math.abs(dist - HIT.sweetSpot) / spread, 0, 1);
     const tIn = sw.elapsed - sw.windup;
     const tMid = sw.window * 0.4;
-    const timing = clamp(1 - Math.abs(tIn - tMid) / (sw.window * 0.62), 0, 1);
+    const windowQ = clamp(1 - Math.abs(tIn - tMid) / (sw.window * 0.62), 0, 1);
+    const timing = clamp(0.3 + 0.45 * distQ + 0.25 * windowQ, 0, 1);
 
     sw.done = true;
     sw.contact = {
@@ -167,7 +186,10 @@ export class Player {
     }
     if (this.state === 'recover' && this.stateTime > HIT.recoverTime) this.setState('idle');
 
-    // ---- locomotion: accelerate toward intent, friction decelerates.
+    // ---- locomotion: exponential approach toward the DESIRED velocity —
+    // gives real acceleration/momentum, guarantees maxSpeed() is actually
+    // attainable (so AI interception planning matches reality), and makes
+    // both the speed and acceleration stats meaningful.
     // Swinging/recovering players are heavy-footed (control penalty).
     const controlF = this.isSwinging() ? 0.35 : this.state === 'swing' ? 0.2 :
       this.state === 'recover' ? 0.55 : 1;
@@ -178,20 +200,20 @@ export class Player {
       // backpedal: moving against facing is slower
       const moveYaw = Math.atan2(ix, iz);
       const against = Math.abs(angleDelta(this.facing, moveYaw)) > Math.PI * 0.6;
-      const a = this.accel() * controlF * (against ? MOVE.backpedalFactor : 1);
-      this.vel.x += ix * a * dt;
-      this.vel.z += iz * a * dt;
+      const speedCap = this.maxSpeed() * clamp(intentLen, 0, 1) *
+        (against ? MOVE.backpedalFactor : 1) * (this.isSwinging() ? 0.5 : 1);
+      const desiredX = ix * speedCap, desiredZ = iz * speedCap;
+      // rate: time-constant maxSpeed/accel — accel stat sets how fast you get there
+      const k = 1 - Math.exp(-(this.accel() / Math.max(1, this.maxSpeed())) * controlF * dt);
+      this.vel.x += (desiredX - this.vel.x) * k;
+      this.vel.z += (desiredZ - this.vel.z) * k;
+    } else {
+      // no input: exponential ground friction — natural deceleration
+      const fr = Math.exp(-MOVE.friction * dt);
+      this.vel.x *= fr; this.vel.z *= fr;
     }
-    // exponential ground friction — natural momentum + deceleration
-    const fr = Math.exp(-MOVE.friction * dt * (intentLen > 0.01 ? 0.42 : 1));
-    this.vel.x *= fr; this.vel.z *= fr;
 
-    // clamp speed
     const sp = lenXZ(this.vel);
-    const max = this.maxSpeed() * (intentLen > 0.01 ? clamp(intentLen, 0, 1) : 1) *
-      (this.isSwinging() ? 0.5 : 1);
-    if (sp > max) { this.vel.x *= max / sp; this.vel.z *= max / sp; }
-
     this.pos.x += this.vel.x * dt;
     this.pos.z += this.vel.z * dt;
 

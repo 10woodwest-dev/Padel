@@ -43,6 +43,7 @@ export const angleDelta = (a, b) => {
 // Deterministic-ish RNG helpers (Math.random wrapped for future seeding).
 export const rand = (lo = 0, hi = 1) => lo + Math.random() * (hi - lo);
 export const randSign = () => (Math.random() < 0.5 ? -1 : 1);
-// Approximate gaussian (sum of 3 uniforms), good enough for error scatter.
+// Approximate gaussian (sum of 3 uniforms has σ = 0.5, so ×2 normalises to
+// σ = 1), good enough for error scatter.
 export const randGauss = (std = 1) =>
-  ((Math.random() + Math.random() + Math.random()) - 1.5) * 2 * std * 0.7071;
+  ((Math.random() + Math.random() + Math.random()) - 1.5) * 2 * std;

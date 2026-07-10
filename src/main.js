@@ -283,11 +283,14 @@ function frame(now) {
     stepBall(G.ball, PHYSICS.dt, events, false);
     if (events.length) handleBallEvents(events);
 
-    // swing contact tests (racket meets ball)
-    for (const p of G.players) {
-      if (!p.isSwinging()) continue;
-      const contact = p.tryContact(G.ball.pos);
-      if (contact) resolveContact(p, contact);
+    // swing contact tests (racket meets ball) — only while the point is
+    // actually being played; nobody may hijack a serve drop or a dead ball
+    if (G.match.state === 'live') {
+      for (const p of G.players) {
+        if (!p.isSwinging()) continue;
+        const contact = p.tryContact(G.ball.pos, G.ball.vel);
+        if (contact) resolveContact(p, contact);
+      }
     }
 
     // body-touch rule: ball hitting a player's body loses them the point

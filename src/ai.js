@@ -103,21 +103,36 @@ export class AIManager {
     // ---- who takes the ball?
     const ballComing = this.ballTowardTeam(team, pred);
     if (ballComing && pred) {
-      const picks = members.map((p) => ({ p, s: this.interceptFor(p, pred) }));
-      picks.sort((a, b) => (a.s ? a.s.t : 99) - (b.s ? b.s.t : 99));
-      let taker = picks[0].s ? picks[0].p : null;
+      // serve return: the diagonal receiver MUST take it (rules), never the partner
+      if (this.referee.serveReturnPending && team !== this.referee.servingTeam) {
+        brain.taker = members.find((m) => m.id === this.referee.receiverId) || brain.taker;
+        brain.stateTimer += 0; // no formation churn during the return
+      } else {
+        const picks = members.map((p) => ({ p, s: this.interceptFor(p, pred) }));
+        picks.sort((a, b) => (a.s ? a.s.t : 99) - (b.s ? b.s.t : 99));
+        let taker = picks[0].s ? picks[0].p : null;
 
-      // the human's AI partner yields ambiguous balls to the human
-      if (taker && !taker.isHuman && members.some((m) => m.isHuman)) {
-        const hPick = picks.find((x) => x.p.isHuman);
-        if (hPick?.s) {
-          const humanSideBall = Math.sign(hPick.s.pos.x - 0.001) ===
-            Math.sign(this.human.pos.x - 0.001);
-          const closeCall = Math.abs(hPick.s.t - picks[0].s.t) < 0.5;
-          if (humanSideBall || closeCall) taker = hPick.p;
+        // hysteresis: keep the current taker unless the alternative is
+        // clearly better (0.18 s margin) — prevents 50/50 balls flip-flopping
+        // the assignment several times per second
+        const cur = brain.taker;
+        if (taker && cur && cur !== taker && members.includes(cur)) {
+          const curPick = picks.find((x) => x.p === cur);
+          if (curPick?.s && curPick.s.t - picks[0].s.t < 0.18) taker = cur;
         }
+
+        // the human's AI partner yields ambiguous balls to the human
+        if (taker && !taker.isHuman && members.some((m) => m.isHuman)) {
+          const hPick = picks.find((x) => x.p.isHuman);
+          if (hPick?.s) {
+            const humanSideBall = Math.sign(hPick.s.pos.x - 0.001) ===
+              Math.sign(this.human.pos.x - 0.001);
+            const closeCall = Math.abs(hPick.s.t - picks[0].s.t) < 0.5;
+            if (humanSideBall || closeCall) taker = hPick.p;
+          }
+        }
+        brain.taker = taker;
       }
-      brain.taker = taker;
     } else {
       brain.taker = null;
     }
@@ -153,15 +168,21 @@ export class AIManager {
   // Respects the serve-return bounce rule and each player's reach/speed.
   interceptFor(p, pred) {
     if (!pred) return null;
+    if (this.referee.phase === 'serveFlight') {
+      // the serving team must NEVER play its own serve mid-flight (double
+      // strike = point lost), and among the receivers only the diagonal
+      // returner may take it — and only after the bounce
+      if (p.team === this.referee.servingTeam) return null;
+      if (this.referee.receiverId != null && p.id !== this.referee.receiverId) return null;
+    }
     const mustBounceFirst =
       this.referee.phase === 'serveFlight' && p.team !== this.referee.servingTeam;
-    let bounced = false;
     let firstBounceT = -1;
     for (const e of pred.events) {
       if (e.type === 'floor' && e.side === p.teamSign) { firstBounceT = e.t; break; }
     }
-    const micro = this.micro.get(p.id);
-    const speed = p.maxSpeed() * this.diff.speed;
+    // plan with a realistic average dash speed (acceleration costs time)
+    const speed = p.maxSpeed() * this.diff.speed * 0.85;
 
     let best = null;
     for (const s of pred.samples) {
@@ -251,9 +272,10 @@ export class AIManager {
     // emergency late swing if the ball is suddenly on top of us
     if (isTaker && !p.isSwinging() && !p.inRecovery() && this.ball.active) {
       const d = distXZ(p.pos, this.ball.pos);
-      const mustBounceFirst =
-        this.referee.phase === 'serveFlight' && p.team !== this.referee.servingTeam;
-      if (!mustBounceFirst && d < p.reach() * 0.85 &&
+      // never swing at a serve in flight (own serve = double strike; as the
+      // receiver the ball has to bounce first)
+      const serveFlight = this.referee.phase === 'serveFlight';
+      if (!serveFlight && d < p.reach() * 0.85 &&
         this.ball.pos.y < p.overheadReach() && this.ball.pos.y > 0.1) {
         const fake = { pos: vCopy(this.ball.pos), vel: vCopy(this.ball.vel), t: 0 };
         const { shot, aim, power } = this.chooseShot(p, fake);

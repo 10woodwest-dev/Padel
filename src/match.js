@@ -83,12 +83,18 @@ export class Match {
     this.cb.onPhase(this.state);
   }
 
-  /** restart the current point (R key) — no score change */
+  /** restart the current point (R key) — no score change. If the previous
+   *  point was already decided (banner showing), advance to the next point
+   *  instead so the pending serve-rotation/side change isn't discarded. */
   restartPoint() {
     if (this.state === 'matchOver') return;
-    this.serveNumber = 1;
-    this.startPoint();
-    this.cb.onMessage('Point restarted', 'info');
+    if (this.state === 'pointOver') {
+      this.nextPoint();
+    } else {
+      this.serveNumber = 1;
+      this.startPoint();
+      this.cb.onMessage('Point restarted', 'info');
+    }
   }
 
   // Classic doubles positions. Serving team: server deep behind the line,
@@ -158,25 +164,48 @@ export class Match {
   requestServe(aim) {
     if (this.state !== 'preServe' || this.serveStage) return;
     this.serveStage = 'drop';
+    this.serveDropTime = 0;
     this.serveAim = vCopy(aim);
     this.serveBounced = false;
     // release the ball from the hand — real padel: bounce it, hit it underarm
     resetBall(this.ball, this.ball.pos, v3(0, -0.4, 0), v3());
   }
 
-  /** ball events during the drop are watched to time the underarm strike */
+  /** ball events during the drop are watched to time the underarm strike.
+   *  Only a bounce at the server's feet counts — if someone whacked the drop
+   *  ball across the court, a far-away bounce must not arm the serve. */
   onBallEvent(ev) {
     if (this.state === 'preServe' && this.serveStage === 'drop' && ev.type === 'floor') {
-      this.serveBounced = true;
+      const srv = this.server;
+      if (Math.hypot(ev.pos.x - srv.pos.x, ev.pos.z - srv.pos.z) < 1.5) {
+        this.serveBounced = true;
+      }
     }
   }
 
   updateServeSequence(dt) {
-    if (this.serveStage !== 'drop' || !this.serveBounced) return;
+    if (this.serveStage !== 'drop') return;
+    this.serveDropTime = (this.serveDropTime || 0) + dt;
+    // if the drop ball was knocked away from the server (interference),
+    // re-park it and restart the drop instead of serving from mid-court
+    {
+      const srv = this.server;
+      if (Math.hypot(this.ball.pos.x - srv.pos.x, this.ball.pos.z - srv.pos.z) > 1.6) {
+        this.serveStage = null;
+        this.serveBounced = false;
+        this.ball.active = false;
+        this.ball.pos = v3(srv.pos.x + 0.3, 0.9, srv.pos.z);
+        this.ball.vel = v3(); this.ball.spin = v3();
+        return;
+      }
+    }
+    if (!this.serveBounced && this.serveDropTime < 2) return;
     const ball = this.ball;
     // strike near the apex of the bounce (must be below the waist — it is,
-    // the bounce apex from a hand drop is ~0.45 m)
-    if (ball.vel.y <= 0.25 && ball.pos.y > 0.2) {
+    // the bounce apex from a hand drop is ~0.45 m). The 2 s timeout is a
+    // safety net so a degenerate drop can never soft-lock the serve.
+    if ((ball.vel.y <= 0.25 && ball.pos.y > 0.2) || this.serveDropTime >= 2) {
+      this.serveDropTime = 0;
       const srv = this.server;
       const q = computeShotQuality({
         shot: 'serve',
@@ -216,7 +245,10 @@ export class Match {
     if (this.mode === 'match') {
       const res = this.scoring.addPoint(winner);
       this.cb.onScore();
-      this.pendingAdvance = { gameWon: !!res.gameWon, matchWon: !!res.matchWon, tieBreak: !!res.tieBreak };
+      this.pendingAdvance = {
+        gameWon: !!res.gameWon, matchWon: !!res.matchWon, tieBreak: !!res.tieBreak,
+        tieBreakPoint: !!res.tieBreakPoint, tieBreakPointsPlayed: res.tieBreakPointsPlayed || 0,
+      };
       if (res.matchWon) {
         this.state = 'matchOver';
         this.cb.onPhase(this.state);
@@ -241,7 +273,10 @@ export class Match {
       this.serveStage = null;
       this.state = 'positioning';
       this.stateTime = 0.6; // shorter reset before the second serve
-      this.ball.active = false;
+      // everyone walks back to legal serve positions — otherwise the second
+      // serve is struck from wherever the first rally left the players
+      // (including the wrong half of the court)
+      this.assignStartPositions();
     }
   }
 
@@ -251,7 +286,7 @@ export class Match {
     this.serveStage = null;
     this.state = 'positioning';
     this.stateTime = 0.6;
-    this.ball.active = false;
+    this.assignStartPositions();
   }
 
   nextPoint() {
@@ -260,6 +295,12 @@ export class Match {
       if (this.pendingAdvance?.gameWon) {
         this.serveOrderIdx++;
         this.serveSide = 'right';
+      } else if (this.pendingAdvance?.tieBreakPoint) {
+        // tie-break rotation: server changes after the 1st point and then
+        // every 2 points; sides follow the point parity (right on even)
+        const played = this.pendingAdvance.tieBreakPointsPlayed;
+        if (played % 2 === 1) this.serveOrderIdx++;
+        this.serveSide = played % 2 === 0 ? 'right' : 'left';
       } else {
         this.serveSide = this.serveSide === 'right' ? 'left' : 'right';
       }

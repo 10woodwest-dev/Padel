@@ -58,7 +58,9 @@ export class Scoring {
       this.games[team]++;
       return this.winSet(team);
     }
-    return {};
+    // expose the running point count so match.js can rotate the serve
+    // (server changes after the 1st point, then every 2 points)
+    return { tieBreakPoint: true, tieBreakPointsPlayed: p + q };
   }
 
   winGame(team) {

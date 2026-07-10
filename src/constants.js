@@ -58,7 +58,7 @@ export const BALL = {
   // Magnus (spin lift)  a = S (ω × v), clamped. Tuned so a 300 rad/s topspin
   // drive at 25 m/s dips visibly but does not loop like table tennis.
   magnusK: 0.00042,
-  magnusMaxAccel: 28,
+  magnusMaxAccel: 10,
   spinDecayTau: 9,   // seconds — air slowly bleeds spin
   maxSpin: 550,      // rad/s hard clamp
 
@@ -66,7 +66,9 @@ export const BALL = {
   // Friction is what couples spin <-> tangential velocity in the impulse
   // bounce model (see ball.js), so it shapes how topspin "kicks".
   surfaces: {
-    floor: { restitution: 0.75, friction: 0.55 },
+    // 0.775 lands the 2.54 m drop test inside the regulation 1.35–1.45 m
+    // window WITH air drag applied (0.75 measured ~1.30 m).
+    floor: { restitution: 0.775, friction: 0.55 },
     // Glass: clean, springy, predictable — the defining padel rebound.
     glass: { restitution: 0.80, friction: 0.28 },
     // Metallic mesh: dead and messy — low restitution plus a random normal

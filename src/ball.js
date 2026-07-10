@@ -133,26 +133,22 @@ export function stepBall(state, dt, events = [], deterministic = false) {
 function bounce(state, n, surface, jitter = 0) {
   const { vel, spin } = state;
 
-  // optional normal jitter (metallic mesh: rebounds are deadened AND messy)
-  let nn = n;
-  if (jitter > 0) {
-    nn = v3(n.x + rand(-jitter, jitter), n.y + rand(-jitter, jitter), n.z + rand(-jitter, jitter));
-    const l = vLen(nn); nn = vScale(nn, 1 / l);
-  }
-
-  const vn = vDot(vel, nn);
+  // always reflect against the TRUE surface normal (jittering the normal
+  // before the separating test could turn a real contact into a "miss",
+  // leaving the ball dragging along the fence)
+  const vn = vDot(vel, n);
   if (vn >= 0) return; // already separating
 
   const e = surface.restitution;
   // normal impulse
-  vel.x -= (1 + e) * vn * nn.x;
-  vel.y -= (1 + e) * vn * nn.y;
-  vel.z -= (1 + e) * vn * nn.z;
+  vel.x -= (1 + e) * vn * n.x;
+  vel.y -= (1 + e) * vn * n.y;
+  vel.z -= (1 + e) * vn * n.z;
 
   // contact-point slip u = tangential( v + ω × (-r n) )
-  const cp = vAdd(vel, vCross(spin, vScale(nn, -BALL.radius)));
-  const cpN = vDot(cp, nn);
-  const u = v3(cp.x - cpN * nn.x, cp.y - cpN * nn.y, cp.z - cpN * nn.z);
+  const cp = vAdd(vel, vCross(spin, vScale(n, -BALL.radius)));
+  const cpN = vDot(cp, n);
+  const u = v3(cp.x - cpN * n.x, cp.y - cpN * n.y, cp.z - cpN * n.z);
   const uLen = vLen(u);
   if (uLen > 1e-4) {
     const jStop = (2 / 7) * uLen;                      // per unit mass
@@ -161,9 +157,26 @@ function bounce(state, n, surface, jitter = 0) {
     const d = vScale(u, -1 / uLen);
     vel.x += j * d.x; vel.y += j * d.y; vel.z += j * d.z;
     // Δω = -(5 j / 2 r) (n × d)   (per unit mass, I = 2/5 r²)
-    const dw = vScale(vCross(nn, d), -(5 * j) / (2 * BALL.radius));
+    const dw = vScale(vCross(n, d), -(5 * j) / (2 * BALL.radius));
     spin.x += dw.x; spin.y += dw.y; spin.z += dw.z;
   }
+
+  // metallic mesh: deaden AND scramble the OUTGOING velocity (random tilt),
+  // then guarantee the ball still separates from the wall
+  if (jitter > 0) {
+    const sp = vLen(vel);
+    vel.x += rand(-jitter, jitter) * sp * 0.5;
+    vel.y += rand(-jitter, jitter) * sp * 0.35;
+    vel.z += rand(-jitter, jitter) * sp * 0.5;
+    const sepMin = Math.max(0.25, -vn * e * 0.4);
+    const out = vDot(vel, n);
+    if (out < sepMin) {
+      vel.x += (sepMin - out) * n.x;
+      vel.y += (sepMin - out) * n.y;
+      vel.z += (sepMin - out) * n.z;
+    }
+  }
+
   // impacts always scrub a little spin
   spin.x *= 0.96; spin.y *= 0.96; spin.z *= 0.96;
   clampSpin(spin);

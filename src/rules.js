@@ -73,13 +73,21 @@ export class Referee {
 
   /** any racket contact after the serve strike */
   rallyHit(player) {
+    // ignore swings at a dead ball (point already decided / not started) —
+    // without this a hit during the point-over banner would re-open the
+    // rally and let the same point be scored twice
+    if (this.phase !== 'serveFlight' && this.phase !== 'rally') return;
     if (this.phase === 'serveFlight') {
       // returner (or partner) volleyed the serve before the bounce — illegal
       if (player.team !== this.servingTeam) {
         return this.pointOver(this.servingTeam, 'serve-volley',
           'Return before the bounce — serve must bounce first');
       }
-      // server side touching the ball mid-serve-flight: treat as their leg
+      // the serving team playing its own serve before the box bounce is a
+      // double strike — they lose the point (and it must never morph into a
+      // rally leg that skips the service-box check)
+      return this.pointOver(1 - this.servingTeam, 'serve-touch',
+        'Serving team touched the serve');
     }
     // only the diagonal receiver may return the serve
     if (this.serveReturnPending && player.team !== this.servingTeam
@@ -103,6 +111,11 @@ export class Referee {
   /** ball touched a player's body (not a racket contact) */
   bodyTouch(player) {
     if (this.phase !== 'rally' && this.phase !== 'serveFlight') return;
+    // a serve that hits the server or their partner on the fly is a service
+    // FAULT (second serve), not an outright loss of the point
+    if (this.phase === 'serveFlight' && player.team === this.servingTeam) {
+      return this.serveFault("Serve touched the server's side");
+    }
     this.pointOver(1 - player.team, 'body', 'Ball touched the player — point lost');
   }
 
@@ -240,6 +253,11 @@ export class Referee {
 
       case 'out': {
         if (this.legBounced) {
+          // a SERVE leaving the cage after its box bounce is a fault under
+          // current FIP rules (the "golden serve" ace was abolished)
+          if (this.serveReturnPending) {
+            return this.serveFault('Serve left the court after the bounce');
+          }
           // legally left the cage after bouncing (por tres / por cuatro)
           return this.pointOver(hitter, 'exit-winner', 'Ball out of the court — winner!');
         }
