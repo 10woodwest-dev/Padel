@@ -99,7 +99,7 @@ export const MOVE = {
   minSpeedFactor: 0.62,  // speed stat 0 → 62 % of base
   baseAccel: 18,         // m/s² at accel stat 100
   minAccelFactor: 0.55,
-  friction: 10,          // ground drag (1/s) — gives natural deceleration
+  friction: 7,           // ground drag (1/s) with no input — hard athletic braking, ~0.9 m from full sprint, never an instant stop
   turnRate: 9,           // rad/s facing slew — you cannot snap 180° instantly
   backpedalFactor: 0.72, // moving against your facing is slower
   aiSpeedFactor: 0.94,   // AI players slightly slower than their stats imply
