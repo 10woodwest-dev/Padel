@@ -13,8 +13,10 @@
 // ============================================================================
 
 import * as THREE from 'three';
-import { PHYSICS, COLORS } from './constants.js';
-import { v3, vCopy } from './mathUtils.js';
+import { PHYSICS, COLORS, RACKET } from './constants.js';
+import { v3, vCopy, vAdd, vSub, vScale, vDot, vNorm, vLen, clamp } from './mathUtils.js';
+import { RacketTrail, ImpactBursts } from './fx.js';
+import { GameAudio } from './audio.js';
 import { buildCourt } from './court.js';
 import { createBallState, stepBall, BallVisual } from './ball.js';
 import { SHOTS, executeShot, computeShotQuality } from './shots.js';
@@ -73,6 +75,9 @@ const G = {
 };
 
 G.debug = new DebugView(scene, ui);
+G.bursts = new ImpactBursts(scene);
+G.audio = new GameAudio();
+G.trails = []; // one racket trail per player, rebuilt with the line-up
 
 // aim reticle (human aiming target)
 const reticle = new THREE.Group();
@@ -127,6 +132,10 @@ function setupPlayers(humanId) {
   G.players = [human, partner, opp1, opp2];
   G.human = human;
   for (const p of G.players) scene.add(p.model.group);
+
+  // one swing trail per player, tinted by kit accent
+  for (const t of G.trails) scene.remove(t.line);
+  G.trails = G.players.map((p) => new RacketTrail(scene, p.archetype.kit.accent ?? 0xffffff));
 }
 
 function teamNames() {
@@ -161,6 +170,10 @@ function startSession(settings) {
       G.debug.clearEvents();
     },
     onShotFeedback: (t, q) => ui.showShotFeedback(t, q),
+    onServeStruck: (srv) => {
+      G.bursts.spawn(G.ball.pos, vNorm(G.ball.vel), srv.archetype.kit.accent ?? 0xffffff, 0.26);
+      G.audio.play('hit', 0.5);
+    },
   });
   G.ai = new AIManager(G.players, G.human, G.match, G.referee, G.ball, G.settings.difficulty);
   G.cameraRig = new CameraRig(camera, G.human);
@@ -170,6 +183,7 @@ function startSession(settings) {
   ui.setHUDVisible(true);
   G.running = true;
   G.paused = false;
+  G.audio.init(); // Play click is a user gesture — safe to create AudioContext
 }
 
 function showMenu() {
@@ -181,6 +195,13 @@ function showMenu() {
 
 // ---------------------------------------------------------------------------
 // Contact resolution — racket meets ball (human and AI both land here).
+//
+// The exit velocity is a BLEND of intent and physics:
+//   intent  — the ballistic solve from executeShot (what the player wants)
+//   physics — the incoming ball reflected off the racket face plus the
+//             racket head's real velocity at the instant of contact
+// Clean, centred contact is mostly intent; late/off-centre contact lets the
+// physics through, deflecting the ball off line and stealing/adding pace.
 // ---------------------------------------------------------------------------
 function resolveContact(player, contact) {
   const def = SHOTS[contact.shot];
@@ -198,7 +219,7 @@ function resolveContact(player, contact) {
   // swing physically connects
   G.referee.rallyHit(player);
 
-  executeShot(G.ball, {
+  const res = executeShot(G.ball, {
     shot: contact.shot,
     start: vCopy(G.ball.pos),
     aim: contact.aim,
@@ -208,10 +229,35 @@ function resolveContact(player, contact) {
     errorScale: player.isHuman ? 1.0 : (player.aiErrorScale ?? 1.0),
   });
 
+  // ---- physical racket blend (skipped for mishits — already scuffed) ------
+  if (!res.mishit) {
+    const intended = vCopy(G.ball.vel);
+    const faceN = vNorm(intended); // face square to the intended launch
+    // reflect the incoming ball off the face
+    const vIn = contact.ballVel;
+    const reflected = vSub(vIn, vScale(faceN, 2 * vDot(vIn, faceN)));
+    // racket-head speed adds pace along the face normal
+    const racketAlong = Math.max(0, vDot(contact.racketVel, faceN));
+    const phys = vAdd(vScale(reflected, RACKET.restitution), vScale(faceN, racketAlong * RACKET.power));
+    // blend: better contact → more intent
+    const assist = clamp(
+      RACKET.assistBase + RACKET.assistQuality * quality + (player.isHuman ? 0 : 0.10), 0, 0.95);
+    let out = vAdd(vScale(intended, assist), vScale(phys, 1 - assist));
+    // off-centre contact deflects the ball toward the miss direction
+    out = vAdd(out, vScale(contact.offset, vLen(out) * RACKET.deflect * contact.offCentre * 0.25));
+    const outLen = vLen(out);
+    if (outLen > RACKET.maxExitSpeed) out = vScale(out, RACKET.maxExitSpeed / outLen);
+    G.ball.vel = out;
+  }
+
   G.ai.notifyTeamHit(player.team, contact.shot);
   G.lastStrike = { playerId: player.id, t: G.time };
   // swinging costs a little energy
   player.stamina = Math.max(0, player.stamina - 1.2);
+
+  // feedback: burst at the contact point + racket pop scaled by exit speed
+  G.bursts.spawn(G.ball.pos, vNorm(G.ball.vel), player.archetype.kit.accent ?? 0xffffff, 0.3);
+  G.audio.play('hit', clamp(vLen(G.ball.vel) / 30, 0.2, 1));
 
   if (player.isHuman) {
     ui.showShotFeedback(`${def.label} — ${feedback}`, quality);
@@ -230,6 +276,28 @@ function handleBallEvents(events) {
     G.referee.ballEvent(ev);
     if (ev.type === 'glass' && ev.side === G.human.teamSign) {
       G.lastGlassOwnSideAt = G.time;
+    }
+    // sound + spark per surface (intensity from ball speed)
+    const speed = vLen(G.ball.vel);
+    const k = clamp(speed / 22, 0.15, 1);
+    switch (ev.type) {
+      case 'floor':
+        if (speed > 1.6) G.audio.play('bounce', k);
+        break;
+      case 'glass': {
+        G.audio.play('glass', k);
+        const n = ev.wall === 'back' ? v3(0, 0, -Math.sign(ev.pos.z)) : v3(-Math.sign(ev.pos.x), 0, 0);
+        G.bursts.spawn(ev.pos, n, 0x9fd8ef, 0.34);
+        break;
+      }
+      case 'mesh': {
+        G.audio.play('mesh', k);
+        const n = ev.wall === 'back' ? v3(0, 0, -Math.sign(ev.pos.z)) : v3(-Math.sign(ev.pos.x), 0, 0);
+        G.bursts.spawn(ev.pos, n, 0xd9b26a, 0.3);
+        break;
+      }
+      case 'net': G.audio.play('net', k); break;
+      case 'netband': G.audio.play('let', 0.8); break;
     }
   }
 }
@@ -268,8 +336,10 @@ function frame(now) {
 
   G.ai.update(dt);
 
-  // ---- players -------------------------------------------------------------
-  for (const p of G.players) p.update(dt);
+  // ---- players (ball passed for racket seeking + head tracking) -------------
+  for (const p of G.players) p.update(dt, G.ball);
+  for (let i = 0; i < G.trails.length; i++) G.trails[i].update(G.players[i], dt);
+  G.bursts.update(dt);
 
   // ---- physics substeps ----------------------------------------------------
   physicsAccum += dt;
@@ -277,6 +347,8 @@ function frame(now) {
   while (physicsAccum >= PHYSICS.dt && steps < PHYSICS.maxSubSteps * 4) {
     physicsAccum -= PHYSICS.dt;
     steps++;
+    // swing clocks tick at physics rate so contact timing is fps-independent
+    for (const p of G.players) p.advanceSwing(PHYSICS.dt);
     if (!G.ball.active) continue;
 
     const events = [];

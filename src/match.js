@@ -231,6 +231,7 @@ export class Match {
       this.state = 'live';
       this.stateTime = 0;
       this.referee.serveStruck();
+      this.cb.onServeStruck?.(srv);
       this.cb.onPhase(this.state);
     }
   }

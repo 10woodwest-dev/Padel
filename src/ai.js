@@ -264,7 +264,10 @@ export class AIManager {
       const eta = micro.intercept.t;
       const lead = HIT.windup + HIT.activeWindow * 0.4;
       const reactNoise = randGauss(this.diff.reaction * 0.25);
-      if (eta <= lead + Math.abs(reactNoise)) {
+      // + dt so a slow frame can never step OVER the start window entirely,
+      // but never start so early that the ball arrives after the sweep
+      const early = Math.min(Math.max(dt, Math.abs(reactNoise)), HIT.activeWindow * 0.35);
+      if (eta <= lead + early) {
         const { shot, aim, power } = this.chooseShot(p, micro.intercept);
         p.startSwing(shot, aim, power);
       }

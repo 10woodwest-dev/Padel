@@ -110,6 +110,22 @@ export const MOVE = {
   staminaMinFactor: 0.78,    // speed multiplier at zero stamina
 };
 
+// Racket-ball contact physics: the exit velocity is a blend between the
+// player's INTENDED shot (ballistic solve) and the raw PHYSICAL result
+// (incoming ball reflected off the face + racket-head speed). High-quality
+// contact is mostly intent; poor contact lets physics take over, and
+// off-centre contact deflects the ball off line.
+export const RACKET = {
+  contactRadius: 0.34,      // racket-head sphere that must meet the ball (human)
+  contactRadiusAI: 0.40,    // hidden AI assist so rallies stay alive
+  restitution: 0.42,        // how much incoming pace survives the reflection
+  power: 1.05,              // racket-head speed contribution along the face
+  assistBase: 0.62,         // intent weight at quality 0
+  assistQuality: 0.28,      // + this * quality (AI gets a bit more)
+  deflect: 0.55,            // off-centre contact deflection strength
+  maxExitSpeed: 42,
+};
+
 export const HIT = {
   reachBase: 1.35,       // metres from body centre at reach stat 100 (racket incl.)
   reachMin: 1.12,

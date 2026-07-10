@@ -23,7 +23,7 @@ export const ROSTER = [
     archetype: 'Power left-side smasher',
     side: 'left',
     height: 1.94, build: 1.18,           // model scale factors
-    kit: { shirt: 0xc0392b, shorts: 0x1b1b1f, skin: 0xc98d5f },
+    kit: { shirt: 0xc0392b, shorts: 0x1b1b1f, skin: 0xc98d5f, accent: 0xf1c40f, hair: 0x17110c },
     stats: {
       speed: 68, acceleration: 66, reach: 92, reaction: 74,
       volley: 78, lob: 58, smash: 96, bandeja: 82, vibora: 74,
@@ -36,7 +36,7 @@ export const ROSTER = [
     archetype: 'Creative left-side attacker',
     side: 'left',
     height: 1.76, build: 0.95,
-    kit: { shirt: 0x8e44ad, shorts: 0xf0f0f0, skin: 0xa9764c },
+    kit: { shirt: 0x8e44ad, shorts: 0xf0f0f0, skin: 0xa9764c, accent: 0x1abc9c, hair: 0x30241a },
     stats: {
       speed: 82, acceleration: 88, reach: 74, reaction: 90,
       volley: 90, lob: 72, smash: 76, bandeja: 80, vibora: 95,
@@ -49,7 +49,7 @@ export const ROSTER = [
     archetype: 'Defensive right-side controller',
     side: 'right',
     height: 1.80, build: 1.0,
-    kit: { shirt: 0x2471a3, shorts: 0x17202a, skin: 0xe0b089 },
+    kit: { shirt: 0x2471a3, shorts: 0x17202a, skin: 0xe0b089, accent: 0xecf0f1, hair: 0x5b4630 },
     stats: {
       speed: 74, acceleration: 72, reach: 78, reaction: 84,
       volley: 76, lob: 94, smash: 58, bandeja: 78, vibora: 60,
@@ -62,7 +62,7 @@ export const ROSTER = [
     archetype: 'Athletic all-court player',
     side: 'right',
     height: 1.84, build: 1.02,
-    kit: { shirt: 0x1e8449, shorts: 0xf4f6f7, skin: 0x8d5a3a },
+    kit: { shirt: 0x1e8449, shorts: 0xf4f6f7, skin: 0x8d5a3a, accent: 0xf39c12, hair: 0x0f0b08 },
     stats: {
       speed: 93, acceleration: 90, reach: 80, reaction: 86,
       volley: 82, lob: 76, smash: 74, bandeja: 76, vibora: 70,
