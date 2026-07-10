@@ -13,8 +13,8 @@
 // ============================================================================
 
 import * as THREE from 'three';
-import { PHYSICS, HIT, COLORS } from './constants.js';
-import { v3, vCopy, vLen, distXZ } from './mathUtils.js';
+import { PHYSICS, COLORS } from './constants.js';
+import { v3, vCopy } from './mathUtils.js';
 import { buildCourt } from './court.js';
 import { createBallState, stepBall, BallVisual } from './ball.js';
 import { SHOTS, executeShot, computeShotQuality } from './shots.js';
@@ -293,17 +293,10 @@ function frame(now) {
       }
     }
 
-    // body-touch rule: ball hitting a player's body loses them the point
-    if (G.referee.phase === 'rally' || G.referee.phase === 'serveFlight') {
-      for (const p of G.players) {
-        if (p.id === G.lastStrike.playerId && G.time - G.lastStrike.t < 0.4) continue;
-        if (G.ball.pos.y < HIT.bodyHeight &&
-          distXZ(p.pos, G.ball.pos) < HIT.bodyRadius && vLen(G.ball.vel) > 1.5) {
-          G.referee.bodyTouch(p);
-          break;
-        }
-      }
-    }
+    // NOTE: real padel's body-touch rule (ball touching a player loses the
+    // point) is intentionally DISABLED for playability — the ball passes
+    // through players. Re-enable by calling G.referee.bodyTouch(p) here for
+    // any player within HIT.bodyRadius of the ball.
   }
 
   // ---- match flow, camera, visuals ----------------------------------------

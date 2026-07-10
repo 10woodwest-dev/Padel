@@ -51,7 +51,8 @@ the HUD tells you *late / off balance / bad contact / good / perfect*.
 - **Rules**: underarm serve after a bounce, diagonal box, two serves, lets,
   fence-after-bounce serve fault, returner must let it bounce, own-glass legal /
   own-mesh fault, bounce-before-opponent-wall, live wall rebounds, second-bounce
-  point end, ball-out-of-cage rules, body-touch rule.
+  point end, ball-out-of-cage rules. (The body-touch rule is intentionally
+  disabled for playability; the hook for it remains in `main.js`.)
 - **Scoring**: 15/30/40, deuce/advantage (golden point optional), games, one
   set with tie-break (including tie-break serve rotation), doubles serve
   rotation with side alternation.

@@ -72,7 +72,8 @@ receiving floor yet, and applies padel law:
 - One set, advantage scoring by default; golden point + tie-break exist as settings.
 - Serve is simplified to a single key press (bounce → underarm strike happen automatically,
   legality still enforced); serve position is auto-placed behind the service line.
-- Player-body contact with the ball loses the point (simplified body cylinder).
+- Player-body contact does NOT end the point (rule disabled for playability;
+  re-enable hook in `main.js`).
 - No doubles "double hit" or foot-fault enforcement; no out-of-court play after legal exit.
 - Simple articulated capsule/box player models with procedural posing stand in for real
   animation; the model builder is isolated in `player.js` for easy replacement.
