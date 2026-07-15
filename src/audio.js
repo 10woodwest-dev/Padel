@@ -42,23 +42,29 @@ export class GameAudio {
       mesh: [900, 0.8, 0.5 * i, 0.16],
       net: [260, 1.2, 0.45 * i, 0.1],
       let: [1900, 4, 0.35, 0.05, 1400],
+      step: [180 + i * 120, 0.9, 0.12 * i, 0.05],
+      crowd: [520, 0.5, 0.28 * i, 1.1],
+      game: [1200, 5, 0.4, 0.35, 660],
     }[kind] || [800, 1, 0.4, 0.08];
 
     const [freq, q, gain, decay, tone] = P;
 
-    // filtered noise burst
+    // filtered noise burst (crowd swells get a slow attack)
+    const attack = kind === 'crowd' ? 0.22 : 0.004;
     const src = this.ctx.createBufferSource();
     src.buffer = this.noise;
+    src.loop = true;
     const filt = this.ctx.createBiquadFilter();
     filt.type = 'bandpass';
     filt.frequency.value = freq;
     filt.Q.value = q;
     const g = this.ctx.createGain();
-    g.gain.setValueAtTime(gain, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + decay);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.001, gain), t + attack);
+    g.gain.exponentialRampToValueAtTime(0.001, t + attack + decay);
     src.connect(filt).connect(g).connect(this.master);
     src.start(t);
-    src.stop(t + decay + 0.02);
+    src.stop(t + attack + decay + 0.05);
 
     // optional tonal ping (glass/net-cord)
     if (tone) {

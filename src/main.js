@@ -17,7 +17,8 @@ import { PHYSICS, COLORS, RACKET } from './constants.js';
 import { v3, vCopy, vAdd, vSub, vScale, vDot, vNorm, vLen, clamp } from './mathUtils.js';
 import { RacketTrail, ImpactBursts } from './fx.js';
 import { GameAudio } from './audio.js';
-import { buildCourt } from './court.js';
+import { buildCourt, setLightingPreset } from './court.js';
+import { ReplaySystem } from './replay.js';
 import { createBallState, stepBall, BallVisual } from './ball.js';
 import { SHOTS, executeShot, computeShotQuality } from './shots.js';
 import { ROSTER, getArchetype, DEFAULT_LINEUP } from './roster.js';
@@ -55,6 +56,7 @@ window.addEventListener('resize', () => {
 });
 
 buildCourt(scene);
+setLightingPreset(scene, 'day'); // bright daylight by default; toggle in pause
 
 // ---------------------------------------------------------------------------
 // Game state (rebuilt on every "Play" from the start screen)
@@ -78,6 +80,11 @@ G.debug = new DebugView(scene, ui);
 G.bursts = new ImpactBursts(scene);
 G.audio = new GameAudio();
 G.trails = []; // one racket trail per player, rebuilt with the line-up
+G.replay = new ReplaySystem();
+G.nameTags = [];
+G.settings.lighting = 'day';
+G.replayShownForPoint = false;
+G.replayDelay = 0;
 
 // aim reticle (human aiming target)
 const reticle = new THREE.Group();
@@ -136,6 +143,43 @@ function setupPlayers(humanId) {
   // one swing trail per player, tinted by kit accent
   for (const t of G.trails) scene.remove(t.line);
   G.trails = G.players.map((p) => new RacketTrail(scene, p.archetype.kit.accent ?? 0xffffff));
+
+  // floating name tags
+  for (const t of G.nameTags) scene.remove(t);
+  const nick = (p) => p.isHuman ? 'YOU' : (p.archetype.name.match(/"([^"]+)"/)?.[1] ?? p.archetype.name.split(' ')[0]);
+  G.nameTags = G.players.map((p) => {
+    const tag = makeNameTag(nick(p), p.team === 0 ? '#c9e97a' : '#f0b4a6');
+    scene.add(tag);
+    return tag;
+  });
+}
+
+function updateNameTags() {
+  for (let i = 0; i < G.nameTags.length && i < G.players.length; i++) {
+    const p = G.players[i];
+    G.nameTags[i].position.set(p.pos.x, p.archetype.height * 1.18 + 0.28, p.pos.z);
+  }
+}
+
+// small canvas-sprite name tag hovering above each player
+function makeNameTag(text, color) {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 64;
+  const g = c.getContext('2d');
+  g.font = '600 34px "Segoe UI", system-ui, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.shadowColor = 'rgba(0,0,0,0.8)';
+  g.shadowBlur = 8;
+  g.fillStyle = color;
+  g.fillText(text, 128, 32);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: tex, transparent: true, opacity: 0.85, depthWrite: false,
+  }));
+  sprite.scale.set(1.15, 0.29, 1);
+  return sprite;
 }
 
 function teamNames() {
@@ -164,10 +208,17 @@ function startSession(settings) {
   });
   G.match = new Match(G.players, G.ball, G.referee, G.scoring, {
     onMessage: (text, kind) => ui.showMessage(text, kind),
-    onScore: () => ui.updateScore({ scoring: G.scoring, match: G.match, names: teamNames() }),
-    onPhase: () => {
+    onScore: () => {
+      ui.updateScore({ scoring: G.scoring, match: G.match, names: teamNames() });
+      // little sting when a game is won
+      const games = G.scoring.games[0] + G.scoring.games[1] + G.scoring.sets[0] * 6 + G.scoring.sets[1] * 6;
+      if (games !== G.lastGamesSum) { G.lastGamesSum = games; G.audio.play('game', 0.7); }
+    },
+    onPhase: (state) => {
       ui.updateScore({ scoring: G.scoring, match: G.match, names: teamNames() });
       G.debug.clearEvents();
+      if (state === 'positioning') { G.replay.clear(); G.replayShownForPoint = false; }
+      if (state === 'pointOver' || state === 'matchOver') G.audio.play('crowd', 0.55);
     },
     onShotFeedback: (t, q) => ui.showShotFeedback(t, q),
     onServeStruck: (srv) => {
@@ -178,6 +229,10 @@ function startSession(settings) {
   G.ai = new AIManager(G.players, G.human, G.match, G.referee, G.ball, G.settings.difficulty);
   G.cameraRig = new CameraRig(camera, G.human);
   G.controller = new HumanController(G.human, input, camera);
+  G.replay.bind(G.players, G.ball, G.ballVisual);
+  G.replayActive = false;
+  G.replayShownForPoint = false;
+  G.lastGamesSum = 0;
 
   G.match.begin(G.settings.mode);
   ui.setHUDVisible(true);
@@ -255,9 +310,12 @@ function resolveContact(player, contact) {
   // swinging costs a little energy
   player.stamina = Math.max(0, player.stamina - 1.2);
 
-  // feedback: burst at the contact point + racket pop scaled by exit speed
+  // feedback: burst at the contact point + racket pop scaled by exit speed;
+  // heavy hits punch the camera a little
   G.bursts.spawn(G.ball.pos, vNorm(G.ball.vel), player.archetype.kit.accent ?? 0xffffff, 0.3);
-  G.audio.play('hit', clamp(vLen(G.ball.vel) / 30, 0.2, 1));
+  const exitSpeed = vLen(G.ball.vel);
+  G.audio.play('hit', clamp(exitSpeed / 30, 0.2, 1));
+  if (contact.shot === 'smash' || exitSpeed > 24) G.cameraRig.addShake(0.15);
 
   if (player.isHuman) {
     ui.showShotFeedback(`${def.label} — ${feedback}`, quality);
@@ -316,6 +374,22 @@ function frame(now) {
   if (G.paused) { renderer.render(scene, camera); handleGlobalKeys(); input.endFrame(); return; }
 
   G.time += dt;
+
+  // ---- instant replay playback (freezes normal sim while it runs) ---------
+  if (G.replayActive) {
+    const alive = G.replay.update(dt, camera);
+    updateNameTags();
+    G.bursts.update(dt);
+    const skip = input.wasPressed('Space') || input.wasPressed('KeyR') || input.wasPressed('Escape');
+    if (!alive || skip) {
+      G.replayActive = false;
+      G.replay.stop();
+      ui.setReplayBadge(false);
+    }
+    input.endFrame();
+    renderer.render(scene, camera);
+    return;
+  }
 
   // ---- controllers ---------------------------------------------------------
   const phase = G.match.state;
@@ -376,6 +450,33 @@ function frame(now) {
   G.ballVisual.update(G.ball, dt);
   if ((frameCount & 7) === 0) G.ballVisual.showLanding(G.ball);
   G.cameraRig.update(dt, G.ball);
+  updateNameTags();
+
+  // record footage while live; trigger the instant replay after the banner
+  if (G.match.state === 'live') G.replay.record(dt);
+  if (G.match.state === 'pointOver' && G.match.mode === 'match' && !G.replayShownForPoint) {
+    G.replayDelay += dt;
+    if (G.replayDelay > 0.7) {
+      G.replayShownForPoint = true;
+      if (G.replay.start()) {
+        G.replayActive = true;
+        ui.setReplayBadge(true);
+      }
+    }
+  } else if (G.match.state !== 'pointOver') {
+    G.replayDelay = 0;
+  }
+
+  // footsteps: one soft thud per stride at speed
+  for (const p of G.players) {
+    const stepIdx = Math.floor(p.runPhase / Math.PI);
+    if (p._stepIdx === undefined) p._stepIdx = stepIdx;
+    if (stepIdx !== p._stepIdx) {
+      p._stepIdx = stepIdx;
+      const sp = Math.hypot(p.vel.x, p.vel.z);
+      if (sp > 2.0) G.audio.play('step', clamp(sp / 9, 0.15, 0.5) * (p.isHuman ? 1 : 0.55));
+    }
+  }
 
   // aim reticle: visible whenever the human can influence the next shot
   const showReticle = phase === 'live' || (phase === 'preServe' && isServer);
@@ -405,12 +506,17 @@ function handleGlobalKeys() {
           debug: G.debug.enabled,
           camera: G.cameraRig.mode,
           golden: G.scoring.goldenPoint,
+          lighting: G.settings.lighting,
         },
         {
           onDifficulty: (d) => { G.settings.difficulty = d; G.ai.setDifficulty(d); },
           onToggleDebug: () => G.debug.toggle(),
           onToggleCamera: () => { G.cameraRig.toggle(); return G.cameraRig.mode; },
           onToggleGolden: () => { G.scoring.goldenPoint = !G.scoring.goldenPoint; G.settings.golden = G.scoring.goldenPoint; return G.scoring.goldenPoint; },
+          onToggleLighting: () => {
+            G.settings.lighting = G.settings.lighting === 'day' ? 'evening' : 'day';
+            return setLightingPreset(scene, G.settings.lighting);
+          },
           onResume: () => { G.paused = false; ui.hidePauseMenu(); },
           onRestart: () => { G.paused = false; ui.hidePauseMenu(); G.match.begin(G.settings.mode); },
           onMenu: () => showMenu(),

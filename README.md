@@ -70,6 +70,10 @@ the HUD tells you *late / off balance / bad contact / good / perfect*.
 - **Modes & UX**: match mode, free-rally mode, start screen, pause menu, score
   HUD with serve indicator, fault/let/point messages, shot-quality feedback,
   stamina bar, landing marker, debug overlay.
+- **Presentation**: daylight/evening lighting presets (pause menu), broadcast
+  instant replay after every point (Space to skip), floating player name tags,
+  synthesized audio (racket/bounce/glass/mesh/net, footsteps, crowd reactions,
+  game-won stings), camera impact shake on smashes.
 
 ## Roster
 

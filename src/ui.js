@@ -46,6 +46,7 @@ export class UI {
         <b>Q</b> chiquita &nbsp;·&nbsp; <b>R</b> restart &nbsp;·&nbsp; <b>C</b> camera &nbsp;·&nbsp; <b>Esc</b> pause
       </div>
       <div class="hud-debug" style="display:none"></div>
+      <div class="hud-replay" style="display:none">REPLAY &nbsp;·&nbsp; Space to skip</div>
     `;
     this.elScore = this.root.querySelector('.hud-score');
     this.elMsg = this.root.querySelector('.hud-message');
@@ -53,7 +54,10 @@ export class UI {
     this.elStam = this.root.querySelector('.hud-stamina');
     this.elHints = this.root.querySelector('.hud-hints');
     this.elDebug = this.root.querySelector('.hud-debug');
+    this.elReplay = this.root.querySelector('.hud-replay');
   }
+
+  setReplayBadge(v) { this.elReplay.style.display = v ? '' : 'none'; }
 
   setHUDVisible(v) {
     this.elScore.style.display = v ? '' : 'none';
@@ -216,6 +220,7 @@ export class UI {
           <button data-t="debug">Debug overlay: ${state.debug ? 'ON' : 'OFF'}</button>
           <button data-t="camera">Camera: ${state.camera}</button>
           <button data-t="golden">Deciding point: ${state.golden ? 'golden' : 'advantage'}</button>
+          <button data-t="light">Lighting: ${state.lighting}</button>
         </div>
 
         <h2>Controls</h2>
@@ -243,6 +248,9 @@ export class UI {
     });
     ov.querySelector('[data-t="golden"]').addEventListener('click', (e) => {
       e.target.textContent = `Deciding point: ${handlers.onToggleGolden() ? 'golden' : 'advantage'}`;
+    });
+    ov.querySelector('[data-t="light"]').addEventListener('click', (e) => {
+      e.target.textContent = `Lighting: ${handlers.onToggleLighting()}`;
     });
     ov.querySelector('[data-a="resume"]').addEventListener('click', handlers.onResume);
     ov.querySelector('[data-a="restart"]').addEventListener('click', handlers.onRestart);

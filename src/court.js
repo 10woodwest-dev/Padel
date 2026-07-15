@@ -296,6 +296,8 @@ function makeMeshTexture() {
 // ---------------------------------------------------------------------------
 // Environment — gradient sky dome, simple stands/banners for depth cues.
 // ---------------------------------------------------------------------------
+let _skyMat = null;
+
 function addEnvironment(group) {
   const sky = new THREE.Mesh(
     new THREE.SphereGeometry(120, 24, 12),
@@ -310,6 +312,7 @@ function addEnvironment(group) {
         void main(){ float t = clamp(vp.y/60.0+0.25, 0.0, 1.0); gl_FragColor = vec4(mix(bottom, top, t), 1.0); }`,
     })
   );
+  _skyMat = sky.material;
   group.add(sky);
 
   // low sponsor hoardings around the apron for depth
@@ -325,10 +328,35 @@ function addEnvironment(group) {
 
 // ---------------------------------------------------------------------------
 // Lighting — 4 corner floodlights (padel-style masts), hemisphere ambience,
-// one shadow-casting key light (keeps shadow cost down).
+// one shadow-casting key light (keeps shadow cost down). Day/evening presets
+// switchable at runtime via setLightingPreset().
 // ---------------------------------------------------------------------------
+let _lights = null;
+
+export function setLightingPreset(scene, preset) {
+  if (!_lights) return preset;
+  const day = preset === 'day';
+  const L = _lights;
+  L.hemi.color.setHex(day ? 0xcfe4f5 : 0x9cc0e0);
+  L.hemi.groundColor.setHex(day ? 0x8fa3b5 : 0x2e4058);
+  L.hemi.intensity = day ? 1.35 : 1.05;
+  L.key.color.setHex(day ? 0xfff6e5 : 0xfff4e0);
+  L.key.intensity = day ? 2.3 : 1.5;
+  L.fill.intensity = day ? 0.55 : 0.4;
+  if (_skyMat) {
+    _skyMat.uniforms.top.value.setHex(day ? 0x5f9fd8 : COLORS.skyTop);
+    _skyMat.uniforms.bottom.value.setHex(day ? 0xcfe6f5 : COLORS.skyBottom);
+  }
+  if (scene.fog) {
+    scene.fog.color.setHex(day ? 0x9fc4dd : COLORS.skyTop);
+    scene.fog.near = day ? 60 : 45;
+  }
+  return preset;
+}
+
 function addLights(scene) {
-  scene.add(new THREE.HemisphereLight(0x9cc0e0, 0x2e4058, 1.05));
+  const hemi = new THREE.HemisphereLight(0x9cc0e0, 0x2e4058, 1.05);
+  scene.add(hemi);
 
   const key = new THREE.DirectionalLight(0xfff4e0, 1.5);
   key.position.set(8, 18, 10);
@@ -343,6 +371,7 @@ function addLights(scene) {
   const fill = new THREE.DirectionalLight(0xcfe0ff, 0.4);
   fill.position.set(-10, 12, -8);
   scene.add(fill);
+  _lights = { hemi, key, fill };
 
   // visible light masts at the four corners
   const mastMat = new THREE.MeshStandardMaterial({ color: 0x10161b, roughness: 0.6, metalness: 0.5 });

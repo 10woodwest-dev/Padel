@@ -27,6 +27,9 @@ export class CameraRig {
     this.mode = this.mode === 'follow' ? 'broadcast' : 'follow';
   }
 
+  /** brief impact shake (smashes, big hits) */
+  addShake(mag) { this.shake = Math.max(this.shake || 0, mag); }
+
   update(dt, ball) {
     const p = this.player.pos;
     let targetPos, targetLook;
@@ -60,6 +63,12 @@ export class CameraRig {
     this.pos.lerp(targetPos, lp);
     this.look.lerp(targetLook, ll);
     this.camera.position.copy(this.pos);
+    // impact shake: small decaying random offset
+    if (this.shake > 0.002) {
+      this.camera.position.x += (Math.random() - 0.5) * this.shake;
+      this.camera.position.y += (Math.random() - 0.5) * this.shake * 0.6;
+      this.shake *= Math.exp(-9 * dt);
+    }
     this.camera.lookAt(this.look);
   }
 }
