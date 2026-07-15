@@ -644,9 +644,11 @@ function solveArmIK(shoulder, elbow, Lu, Lf, targetWorld, sideSign) {
 
   // orient the shoulder: rest pose points the arm along -Y
   _q1.setFromUnitVectors(_v2.set(0, -1, 0), _v1);
-  // twist so the elbow hinge (local X) matches the bend plane:
-  // desired hinge axis = normal of the (target, upperArm) plane
-  _v2.crossVectors(_v3, _v1).normalize();
+  // twist so the elbow hinge (local X) matches the bend plane. A positive
+  // elbow.rotation.x bends the forearm toward local -Z, so the desired
+  // hinge is cross(upperArm, target) — NOT cross(target, upperArm), which
+  // folds the forearm backwards away from the target.
+  _v2.crossVectors(_v1, _v3).normalize();
   if (_v2.lengthSq() > 1e-6) {
     _v4.set(1, 0, 0).applyQuaternion(_q1); // current hinge axis
     const twist = signedAngleAround(_v4, _v2, _v1);
