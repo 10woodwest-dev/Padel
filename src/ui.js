@@ -47,6 +47,9 @@ export class UI {
       </div>
       <div class="hud-debug" style="display:none"></div>
       <div class="hud-replay" style="display:none">REPLAY &nbsp;·&nbsp; Space to skip</div>
+      <div class="hud-stat"></div>
+      <div class="lb-top"></div>
+      <div class="lb-bottom"></div>
     `;
     this.elScore = this.root.querySelector('.hud-score');
     this.elMsg = this.root.querySelector('.hud-message');
@@ -55,9 +58,25 @@ export class UI {
     this.elHints = this.root.querySelector('.hud-hints');
     this.elDebug = this.root.querySelector('.hud-debug');
     this.elReplay = this.root.querySelector('.hud-replay');
+    this.elStat = this.root.querySelector('.hud-stat');
+    this.statTimer = null;
   }
 
-  setReplayBadge(v) { this.elReplay.style.display = v ? '' : 'none'; }
+  setReplayBadge(v) {
+    this.elReplay.style.display = v ? '' : 'none';
+    // cinematic letterbox bars during replays (HUD shifts below the bar)
+    this.root.querySelector('.lb-top').classList.toggle('show', v);
+    this.root.querySelector('.lb-bottom').classList.toggle('show', v);
+    this.root.classList.toggle('cinema', v);
+  }
+
+  /** small broadcast stat line ("Serve · 64 km/h", "9-shot rally") */
+  showStat(text, ms = 2200) {
+    this.elStat.textContent = text;
+    this.elStat.classList.add('show');
+    clearTimeout(this.statTimer);
+    this.statTimer = setTimeout(() => this.elStat.classList.remove('show'), ms);
+  }
 
   setHUDVisible(v) {
     this.elScore.style.display = v ? '' : 'none';

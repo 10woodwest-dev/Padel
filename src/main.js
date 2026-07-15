@@ -43,6 +43,9 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
+// filmic grade — richer highlights/contrast, very "broadcast"
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.12;
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(COLORS.skyTop, 45, 110);
@@ -224,12 +227,16 @@ function startSession(settings) {
         G.replayShownForPoint = false;
         G.pointStats = { hits: 0, smash: false };
       }
-      if (state === 'pointOver' || state === 'matchOver') G.audio.play('crowd', 0.55);
+      if (state === 'pointOver' || state === 'matchOver') {
+        G.audio.play('crowd', clamp(0.35 + G.pointStats.hits * 0.06, 0.35, 0.9));
+        if (G.pointStats.hits >= 4) ui.showStat(`${G.pointStats.hits}-shot rally`);
+      }
     },
     onShotFeedback: (t, q) => ui.showShotFeedback(t, q),
     onServeStruck: (srv) => {
       G.bursts.spawn(G.ball.pos, vNorm(G.ball.vel), srv.archetype.kit.accent ?? 0xffffff, 0.26);
       G.audio.play('hit', 0.5);
+      ui.showStat(`Serve · ${Math.round(vLen(G.ball.vel) * 3.6)} km/h`);
     },
   });
   G.ai = new AIManager(G.players, G.human, G.match, G.referee, G.ball, G.settings.difficulty);
@@ -388,6 +395,7 @@ function frame(now) {
     const alive = G.replay.update(dt, camera);
     updateNameTags();
     G.bursts.update(dt);
+    for (let i = 0; i < G.trails.length; i++) G.trails[i].update(G.players[i], dt);
     const skip = input.wasPressed('Space') || input.wasPressed('KeyR') || input.wasPressed('Escape');
     if (!alive || skip) {
       G.replayActive = false;

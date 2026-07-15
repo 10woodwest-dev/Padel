@@ -20,6 +20,7 @@ export function buildCourt(scene) {
   addNet(group);
   addWalls(group);
   addEnvironment(group);
+  addCrowd(group);
   addLights(scene);
 
   scene.add(group);
@@ -323,6 +324,60 @@ function addEnvironment(group) {
     const b = new THREE.Mesh(new THREE.BoxGeometry(w, 1, d), boardMat);
     b.position.set(x, 0.5, z);
     group.add(b);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Crowd — tiered grandstands behind each back wall with instanced spectators
+// (random kit colours, slight pose jitter). Static but dense enough to sell
+// a stadium at broadcast camera distance.
+// ---------------------------------------------------------------------------
+function addCrowd(group) {
+  const stepMat = new THREE.MeshStandardMaterial({ color: 0x2c3a49, roughness: 0.95 });
+  const bodyGeo = new THREE.CapsuleGeometry(0.16, 0.32, 3, 6);
+  const headGeo = new THREE.SphereGeometry(0.09, 8, 6);
+  const palette = [0xc0392b, 0x2471a3, 0xf1c40f, 0x1e8449, 0x8e44ad, 0xe67e22, 0xecf0f1, 0x34495e, 0xd35400, 0x16a085];
+  const skinTones = [0xc98d5f, 0xa9764c, 0xe0b089, 0x8d5a3a, 0xf1c8a0];
+
+  const rows = 3, perRow = 26;
+  for (const sz of [-1, 1]) {
+    // tiered steps
+    for (let r = 0; r < rows; r++) {
+      const step = new THREE.Mesh(new THREE.BoxGeometry(19, 0.72, 1.4), stepMat);
+      step.position.set(0, 0.36 + r * 0.72, sz * (COURT.halfLength + 3.2 + r * 1.4));
+      group.add(step);
+    }
+    // spectators (instanced bodies + heads)
+    const count = rows * perRow;
+    const bodies = new THREE.InstancedMesh(bodyGeo, new THREE.MeshStandardMaterial({ roughness: 0.9 }), count);
+    const heads = new THREE.InstancedMesh(headGeo, new THREE.MeshStandardMaterial({ roughness: 0.7 }), count);
+    const m = new THREE.Matrix4();
+    const c = new THREE.Color();
+    let i = 0;
+    for (let r = 0; r < rows; r++) {
+      for (let s = 0; s < perRow; s++) {
+        if (Math.random() < 0.18) { // empty seats
+          m.makeScale(0.001, 0.001, 0.001);
+          bodies.setMatrixAt(i, m); heads.setMatrixAt(i, m);
+          i++;
+          continue;
+        }
+        const x = -9 + (s / (perRow - 1)) * 18 + (Math.random() - 0.5) * 0.3;
+        const z = sz * (COURT.halfLength + 3.2 + r * 1.4) + (Math.random() - 0.5) * 0.25;
+        const y = 0.72 + r * 0.72 + 0.28;
+        m.makeRotationY((Math.random() - 0.5) * 0.5);
+        m.setPosition(x, y, z);
+        bodies.setMatrixAt(i, m);
+        bodies.setColorAt(i, c.setHex(palette[(Math.random() * palette.length) | 0]));
+        m.setPosition(x, y + 0.32, z);
+        heads.setMatrixAt(i, m);
+        heads.setColorAt(i, c.setHex(skinTones[(Math.random() * skinTones.length) | 0]));
+        i++;
+      }
+    }
+    bodies.instanceMatrix.needsUpdate = true;
+    heads.instanceMatrix.needsUpdate = true;
+    group.add(bodies, heads);
   }
 }
 

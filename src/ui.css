@@ -18,16 +18,18 @@ html, body, #app {
 #ui-root { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
 #ui-root > * { pointer-events: none; }
 
-/* ---------- score HUD ---------- */
+/* ---------- score HUD: broadcast lower-third, top-left ---------- */
 .hud-score {
-  position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
-  background: rgba(10, 16, 24, 0.82);
-  border: 1px solid rgba(150, 190, 220, 0.25);
-  border-radius: 10px;
+  position: absolute; top: 16px; left: 16px;
+  background: linear-gradient(90deg, rgba(8, 13, 20, 0.94), rgba(8, 13, 20, 0.62));
+  border: 1px solid rgba(150, 190, 220, 0.22);
+  border-left: 3px solid #d8f24b;
+  border-radius: 6px;
   padding: 8px 18px 10px;
-  text-align: center;
-  min-width: 260px;
+  text-align: left;
+  min-width: 250px;
   backdrop-filter: blur(4px);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
 }
 .hud-score .teams { display: flex; justify-content: space-between; gap: 18px; font-size: 12px; letter-spacing: 0.06em; color: #9fb8cc; text-transform: uppercase; }
 .hud-score .team-name.serving::before { content: "●"; color: #d8f24b; margin-right: 5px; font-size: 10px; }
@@ -76,6 +78,27 @@ html, body, #app {
   font-size: 11px; color: #7d92a5; text-align: right; line-height: 1.55;
 }
 .hud-hints b { color: #b8cddd; font-weight: 600; }
+
+/* ---------- broadcast stat line ---------- */
+.hud-stat {
+  position: absolute; top: 33%; left: 50%; transform: translate(-50%, 0);
+  font-size: 15px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+  color: #d8f24b; text-shadow: 0 1px 8px rgba(0,0,0,0.9);
+  opacity: 0; transition: opacity 0.25s ease;
+}
+.hud-stat.show { opacity: 0.95; }
+
+/* ---------- cinematic letterbox (replays) ---------- */
+.lb-top, .lb-bottom {
+  position: absolute; left: 0; right: 0; height: 0;
+  background: #05080c; transition: height 0.45s ease;
+  pointer-events: none; z-index: 5;
+}
+.lb-top { top: 0; }
+.lb-bottom { bottom: 0; }
+.lb-top.show, .lb-bottom.show { height: 8.5%; }
+.hud-score { transition: top 0.45s ease; }
+#ui-root.cinema .hud-score { top: calc(8.5% + 10px); }
 
 /* ---------- replay badge ---------- */
 .hud-replay {
