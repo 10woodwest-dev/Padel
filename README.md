@@ -27,7 +27,7 @@ and player on the start screen and press **Play**.
 | **Mouse** (or arrow keys) | Aim reticle on the opponent court |
 | **Space / Left click** | Standard shot — context-aware: topspin drive, volley at the net, bandeja on high balls, wall return off your glass. Also starts the serve. |
 | **Shift + shot** | Lob / high defensive shot |
-| **Ctrl / Right click** | Attacking shot — smash when the ball is overhead, flat drive otherwise |
+| **F / Right click** | Attacking shot — smash when the ball is overhead, flat drive otherwise |
 | **E** | Bandeja / víbora overhead (auto-picks by contact height & player style) |
 | **Q** | Chiquita (soft dipping ball) / block volley at the net |
 | **R** | Restart point |
@@ -42,8 +42,10 @@ the HUD tells you *late / off balance / bad contact / good / perfect*.
 ## What's implemented
 
 - **Court**: regulation 20×10 m cage — 3 m back glass + 1 m mesh above, stepped
-  side glass (3 m/2 m) at the corners, 12 m of side mesh, sagging net (0.88 m
-  centre / 0.92 m posts), service boxes 6.95 m from the net.
+  side glass (3 m/2 m) at the corners, side mesh with DOOR openings beside the
+  net posts (run out through them to return a ball that legally exits the
+  cage), sagging net (0.88 m centre / 0.92 m posts), service boxes 6.95 m from
+  the net.
 - **Ball physics**: 240 Hz fixed-step integration, quadratic drag, Magnus lift,
   impulse bounces with spin↔velocity exchange (topspin kicks and climbs off
   glass, slice dies), per-surface response (clean glass, dead & jittery mesh,
@@ -83,8 +85,7 @@ víbora, defence, consistency, aggression, stamina, court IQ).
    ball pace; controller "assist" options (auto-position for overheads).
 2. **Serve variety** — manual toss timing, slice/flat serve selection, and a
    visible serve meter instead of the automated bounce-strike.
-3. **Out-of-court play** — real padel allows playing the ball back after it
-   exits the cage; currently an exit after the bounce simply ends the point.
+3. **Out-of-court depth** — outside returns currently re-enter through “transparent” walls; model exterior wall collisions so outside players must clear the cage or aim through the door.
 4. **Animation** — replace procedural posing with skinned rigs & real swing
    animations (model builder is isolated in `player.js` for this).
 5. **Match structure** — best-of-three sets, changing ends, per-set stats,

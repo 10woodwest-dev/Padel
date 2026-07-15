@@ -7,7 +7,7 @@
 //   Space / LMB    standard shot (context: drive / topspin / volley /
 //                  wall return / bandeja when overhead)
 //   Shift + shot   lob / high defensive shot
-//   Ctrl / RMB     attacking shot — smash when the ball is overhead,
+//   F / RMB        attacking shot — smash when the ball is overhead,
 //                  flat drive otherwise
 //   E              bandeja / víbora overhead (auto-picks by ball height)
 //   Q              chiquita (soft low ball) / block volley at the net
@@ -71,7 +71,7 @@ export class HumanController {
 
     // ---- shot keys ----------------------------------------------------------
     const shotPressed = inp.wasPressed('Space') || inp.mouseWasPressed(0);
-    const attackPressed = inp.wasPressed('ControlLeft') || inp.wasPressed('ControlRight') || inp.mouseWasPressed(2);
+    const attackPressed = inp.wasPressed('KeyF') || inp.mouseWasPressed(2);
     const overheadPressed = inp.wasPressed('KeyE');
     const softPressed = inp.wasPressed('KeyQ');
     const lobHeld = inp.held('ShiftLeft') || inp.held('ShiftRight');

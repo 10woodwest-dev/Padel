@@ -34,6 +34,16 @@ export const COURT = {
   lineWidth: 0.05,
 };
 
+// Door openings in the side walls beside the net posts (real courts have
+// them; players may run out through them to return a ball that legally left
+// the cage). One doorway per half on each side wall.
+export const DOOR = {
+  zMin: 0.15,    // |z| range of the opening
+  zMax: 1.05,
+  height: 2.2,   // open below this; mesh above
+  outerX: 8.5,   // how far outside players may run
+};
+
 export const NET = {
   heightCenter: 0.88,
   heightPosts: 0.92,

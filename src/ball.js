@@ -17,7 +17,7 @@
 // ============================================================================
 
 import * as THREE from 'three';
-import { BALL, COURT, NET } from './constants.js';
+import { BALL, COURT, NET, DOOR } from './constants.js';
 import {
   v3, vAdd, vScale, vCross, vDot, vLen, vCopy, clamp, rand,
 } from './mathUtils.js';
@@ -58,8 +58,10 @@ function backWallBand(y) {
 
 // Side walls (x = ±5): profile depends on distance from the back wall.
 //  |z| in [8,10]: glass to 3, mesh 3–4;  |z| in [6,8]: glass to 2, mesh 2–3;
-//  |z| in [0,6]: mesh to 3.
+//  |z| in [0,6]: mesh to 3 — except the DOOR openings beside the net posts.
 function sideWallBand(y, z) {
+  const az = Math.abs(z);
+  if (az >= DOOR.zMin && az <= DOOR.zMax && y <= DOOR.height) return null; // open doorway
   const fromBack = COURT.halfLength - Math.abs(z);
   if (fromBack <= COURT.sideGlassHighLength) {
     if (y <= COURT.sideGlassHighHeight) return 'glass';
@@ -117,7 +119,17 @@ export function stepBall(state, dt, events = [], deterministic = false) {
   // --- collisions ----------------------------------------------------------
   collideNet(state, prev, events, deterministic);
   collideFloor(state, events, deterministic);
-  if (state.insideCage) collideWalls(state, prev, events, deterministic);
+  if (state.insideCage) {
+    collideWalls(state, prev, events, deterministic);
+  } else if (
+    // a ball played back from OUTSIDE re-arms the cage once it is clearly
+    // inside the court volume again (below wall height)
+    Math.abs(pos.x) < COURT.halfWidth - 0.15 &&
+    Math.abs(pos.z) < COURT.halfLength - 0.15 &&
+    pos.y < COURT.backTotalHeight - 0.1
+  ) {
+    state.insideCage = true;
+  }
 
   return events;
 }

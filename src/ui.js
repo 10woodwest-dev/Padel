@@ -12,7 +12,7 @@ const CONTROLS_HTML = `
     <div><b>Mouse / arrows</b> aim reticle</div>
     <div><b>Space / LMB</b> standard shot & serve</div>
     <div><b>Shift + shot</b> lob (defensive, high)</div>
-    <div><b>Ctrl / RMB</b> attack — smash overhead</div>
+    <div><b>F / RMB</b> attack — smash overhead</div>
     <div><b>E</b> bandeja / víbora overhead</div>
     <div><b>Q</b> chiquita / block volley</div>
     <div><b>R</b> restart point</div>
@@ -42,7 +42,7 @@ export class UI {
       <div class="hud-feedback"></div>
       <div class="hud-stamina" style="display:none"><div class="fill"></div></div>
       <div class="hud-hints" style="display:none">
-        <b>Space</b> shot &nbsp;·&nbsp; <b>Shift</b> lob &nbsp;·&nbsp; <b>Ctrl</b> smash &nbsp;·&nbsp; <b>E</b> bandeja<br/>
+        <b>Space</b> shot &nbsp;·&nbsp; <b>Shift</b> lob &nbsp;·&nbsp; <b>F</b> smash &nbsp;·&nbsp; <b>E</b> bandeja<br/>
         <b>Q</b> chiquita &nbsp;·&nbsp; <b>R</b> restart &nbsp;·&nbsp; <b>C</b> camera &nbsp;·&nbsp; <b>Esc</b> pause
       </div>
       <div class="hud-debug" style="display:none"></div>

@@ -9,7 +9,7 @@
 // ============================================================================
 
 import * as THREE from 'three';
-import { COURT, NET, COLORS } from './constants.js';
+import { COURT, NET, COLORS, DOOR } from './constants.js';
 
 export function buildCourt(scene) {
   const group = new THREE.Group();
@@ -242,8 +242,34 @@ function addWalls(group) {
       post(sx * HW, sz * (HL - 2), 4);
       post(sx * HW, sz * (HL - 4), 3);
     }
-    // ---- central side mesh: 12 m long, 3 m high
-    meshPanel(COURT.length - 8, COURT.sideMeshHeight, sx * HW, COURT.sideMeshHeight / 2, 0, Math.PI / 2);
+    // ---- central side mesh, split around the DOOR openings beside the net
+    // posts (matching the collision gaps in ball.js): mesh from the corner
+    // glass to each door, a strip above each door, and a narrow strip at the
+    // net-post line between the two doors.
+    const meshSeg = (z0, z1, y0, y1) => {
+      if (z1 - z0 < 0.02 || y1 - y0 < 0.02) return;
+      meshPanel(z1 - z0, y1 - y0, sx * HW, (y0 + y1) / 2, (z0 + z1) / 2, Math.PI / 2);
+    };
+    for (const sz of [-1, 1]) {
+      const zA = sz * DOOR.zMax, zB = sz * (COURT.halfLength - 4);
+      meshSeg(Math.min(zA, zB), Math.max(zA, zB), 0, COURT.sideMeshHeight);       // door → corner glass
+      const d0 = sz * DOOR.zMin, d1 = sz * DOOR.zMax;
+      meshSeg(Math.min(d0, d1), Math.max(d0, d1), DOOR.height, COURT.sideMeshHeight); // strip above the door
+      // white door frame for readability
+      const frame = new THREE.Mesh(
+        new THREE.BoxGeometry(0.05, DOOR.height, 0.05),
+        new THREE.MeshStandardMaterial({ color: 0xdde5ea, roughness: 0.6 })
+      );
+      frame.position.set(sx * HW, DOOR.height / 2, sz * DOOR.zMax);
+      group.add(frame);
+      const lintel = new THREE.Mesh(
+        new THREE.BoxGeometry(0.05, 0.06, DOOR.zMax - DOOR.zMin),
+        new THREE.MeshStandardMaterial({ color: 0xdde5ea, roughness: 0.6 })
+      );
+      lintel.position.set(sx * HW, DOOR.height, sz * (DOOR.zMin + DOOR.zMax) / 2);
+      group.add(lintel);
+    }
+    meshSeg(-DOOR.zMin, DOOR.zMin, 0, COURT.sideMeshHeight); // net-post strip between doors
     post(sx * HW, -2, 3);
     post(sx * HW, 2, 3);
   }

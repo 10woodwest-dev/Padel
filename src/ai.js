@@ -19,7 +19,7 @@
 // aggression and tactical IQ (chance of picking the best option).
 // ============================================================================
 
-import { COURT, HIT, DIFFICULTY } from './constants.js';
+import { COURT, HIT, DIFFICULTY, DOOR } from './constants.js';
 import { predictTrajectory } from './ball.js';
 import { SHOTS } from './shots.js';
 import { v3, vCopy, clamp, lerp, rand, randGauss, distXZ } from './mathUtils.js';
@@ -241,6 +241,21 @@ export class AIManager {
     } else {
       target = this.formationTarget(p, brain);
       micro.intercept = null;
+    }
+    // ---- door routing: if the target is on the other side of the cage wall
+    // (chasing a ball out, or coming back in), go via the doorway beside the
+    // net post instead of pushing into the mesh
+    {
+      const HW = COURT.halfWidth;
+      const meOut = Math.abs(p.pos.x) > HW;
+      const tgtOut = Math.abs(target.x) > HW;
+      if (meOut !== tgtOut) {
+        const sx = Math.sign(meOut ? p.pos.x : target.x) || 1;
+        const doorZ = p.teamSign * (DOOR.zMin + DOOR.zMax) / 2;
+        const atDoor = Math.abs(p.pos.z - doorZ) < 0.35 &&
+          Math.abs(Math.abs(p.pos.x) - HW) < 1.0;
+        if (!atDoor) target = v3(sx * (HW + (meOut ? 0.45 : -0.45)), 0, doorZ);
+      }
     }
     micro.moveTarget = target;
 

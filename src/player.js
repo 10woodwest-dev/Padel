@@ -15,7 +15,7 @@
 // ============================================================================
 
 import * as THREE from 'three';
-import { COURT, MOVE, HIT, RACKET } from './constants.js';
+import { COURT, MOVE, HIT, RACKET, DOOR } from './constants.js';
 import { SHOTS } from './shots.js';
 import {
   v3, vLen, clamp, lerp, damp, angleDelta, lenXZ,
@@ -275,12 +275,29 @@ export class Player {
     }
 
     const sp = lenXZ(this.vel);
+    const prevX = this.pos.x;
     this.pos.x += this.vel.x * dt;
     this.pos.z += this.vel.z * dt;
 
-    // stay inside our half of the cage (padel: you never cross the net)
-    this.pos.x = clamp(this.pos.x, -COURT.halfWidth + 0.3, COURT.halfWidth - 0.3);
-    const zNear = 0.35, zFar = COURT.halfLength - 0.3;
+    // ---- court bounds with DOORS: the side walls are solid except the
+    // doorway beside the net posts — players can run out through it to
+    // chase a ball that legally left the cage, and must come back the same
+    // way. Never across the net (own half only, inside or out).
+    const HW = COURT.halfWidth;
+    const inDoorZ = Math.abs(this.pos.z) >= DOOR.zMin - 0.12 && Math.abs(this.pos.z) <= DOOR.zMax + 0.12;
+    const wasOut = Math.abs(prevX) > HW;
+    let isOut = Math.abs(this.pos.x) > HW;
+    if (wasOut !== isOut && !inDoorZ) {
+      // tried to pass through a wall — stay on your side of it
+      this.pos.x = Math.sign(prevX || 1) * (wasOut ? HW + 0.12 : HW - 0.3);
+      isOut = wasOut;
+    }
+    this.pos.x = clamp(this.pos.x, -DOOR.outerX, DOOR.outerX);
+    if (!isOut && !inDoorZ) {
+      this.pos.x = clamp(this.pos.x, -HW + 0.3, HW - 0.3);
+    }
+    const zNear = Math.abs(this.pos.x) > HW ? 0.12 : 0.35; // door mouth sits near the net line
+    const zFar = Math.abs(this.pos.x) > HW ? COURT.halfLength + 1.5 : COURT.halfLength - 0.3;
     if (this.teamSign > 0) this.pos.z = clamp(this.pos.z, zNear, zFar);
     else this.pos.z = clamp(this.pos.z, -zFar, -zNear);
 
@@ -527,21 +544,23 @@ export class Player {
       const pAim = p + (p < 0.45 ? -0.14 : 0.08);
       this.swingPathPoint(pAim, _v5);
     } else {
-      // ready hold: hand in front of the sternum, racket tip up-forward
-      const az = this.facing + 0.25;
+      // ready hold: RIGHT hand slightly on the racket-arm side of the
+      // sternum, racket tip up-forward. NOTE azimuth convention: facing - δ
+      // is the player's RIGHT, facing + δ their LEFT.
+      const az = this.facing - 0.32;
       const pump = runAmt > 0.25 ? Math.sin(phase) * 0.1 * runAmt : 0;
       _v1.set(
-        this.pos.x + Math.sin(az) * 0.34,
+        this.pos.x + Math.sin(az) * 0.36,
         m.hipH + 0.38 + pump + Math.sin(this.idleTime * 1.9) * 0.012 * (1 - runAmt),
-        this.pos.z + Math.cos(az) * 0.34
+        this.pos.z + Math.cos(az) * 0.36
       );
       _v5.set(
-        this.pos.x + Math.sin(this.facing + 0.1) * 0.52,
-        m.hipH + 0.85,
-        this.pos.z + Math.cos(this.facing + 0.1) * 0.52
+        this.pos.x + Math.sin(this.facing - 0.12) * 0.55,
+        m.hipH + 0.88,
+        this.pos.z + Math.cos(this.facing - 0.12) * 0.55
       );
     }
-    solveArmIK(m.shoulderR, m.elbowR, m.armRLenU, m.armRLenF, _v1, 1);
+    solveArmIK(m.shoulderR, m.elbowR, m.armRLenU, m.armRLenF, _v1, -1);
 
     // orient the racket at the wrist toward the aim point (smoothed)
     m.elbowR.updateWorldMatrix(true, false);
@@ -571,16 +590,18 @@ export class Player {
       _v2.set(this.pos.x + Math.sin(this.facing) * 0.5, m.hipH + 1.05 - clamp(p, 0, 1) * 0.5,
         this.pos.z + Math.cos(this.facing) * 0.5);
     } else if (sp < 2.2) {
-      // hand on the racket throat (slight inward offset so it reads as a hold)
+      // hand on the racket throat, eased a touch toward the chest so the
+      // reach across the body stays relaxed
       m.racketThroat.getWorldPosition(_v2);
-      _v2.x += Math.sin(this.facing - 1.9) * 0.05;
-      _v2.z += Math.cos(this.facing - 1.9) * 0.05;
+      _v2.x = lerp(_v2.x, this.pos.x + Math.sin(this.facing) * 0.15, 0.18);
+      _v2.z = lerp(_v2.z, this.pos.z + Math.cos(this.facing) * 0.15, 0.18);
     } else {
+      // pumping LEFT arm on the player's left side (facing + δ)
       const pump = -Math.sin(phase) * 0.22 * runAmt;
-      _v2.set(this.pos.x + Math.sin(this.facing - 0.5) * 0.42, m.hipH + 0.32 + pump * 0.4,
-        this.pos.z + Math.cos(this.facing - 0.5) * 0.42);
+      _v2.set(this.pos.x + Math.sin(this.facing + 0.5) * 0.42, m.hipH + 0.32 + pump * 0.4,
+        this.pos.z + Math.cos(this.facing + 0.5) * 0.42);
     }
-    solveArmIK(m.shoulderL, m.elbowL, m.armLLenU, m.armLLenF, _v2, -1);
+    solveArmIK(m.shoulderL, m.elbowL, m.armLLenU, m.armLLenF, _v2, 1);
   }
 }
 
@@ -739,8 +760,10 @@ export function buildPlayerModel(archetype) {
     return { shoulderG, elbowG, fLen };
   };
 
-  const R = mkArm(1, armFLenR, true);
-  const L = mkArm(-1, armFLenL, false);
+  // NOTE model-local +x maps to the player's LEFT once the group faces the
+  // net (yaw π for team 0), so the racket (right) arm mounts at local -x.
+  const R = mkArm(-1, armFLenR, true);
+  const L = mkArm(1, armFLenL, false);
 
   // racket on the right wrist — a real padel racket: solid teardrop face
   // with perforation holes, dark carbon frame, short grip + wrist strap

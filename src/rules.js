@@ -21,8 +21,10 @@
 //  * once it has bounced on their floor, wall & fence rebounds are live
 //  * second floor bounce on their side wins you the point
 //  * ball into the net body, or bouncing back on your own floor → you lose
-//  * ball flying OUT of the cage: after a legal bounce → you WIN the point
-//    (ball legally left the court); directly without bouncing → you lose
+//  * ball flying OUT of the cage after a legal bounce stays PLAYABLE — the
+//    defenders may chase it through the side doors and hit it back; the
+//    point goes to the hitter the moment it touches the ground outside.
+//    An exit without bouncing is simply out (hitter loses).
 //  * ball touching a player's body → that player's team loses the point
 // ============================================================================
 
@@ -51,6 +53,7 @@ export class Referee {
     this.legBounced = false;  // has it bounced on the receiving floor yet?
     this.netTouched = false;  // cord clip during serve flight (potential let)
     this.serveReturnPending = false; // between valid serve bounce and return
+    this.outPlay = false;     // ball legally left the cage, still playable
   }
 
   // --- lifecycle driven by match.js ----------------------------------------
@@ -106,6 +109,7 @@ export class Referee {
     this.legHitTeam = player.team;
     this.legBounced = false;
     this.serveReturnPending = false;
+    this.outPlay = false; // a return from outside starts a fresh leg
   }
 
   /** ball touched a player's body (not a racket contact) */
@@ -206,6 +210,11 @@ export class Referee {
         return;
 
       case 'floor': {
+        // out-of-court play: once the ball has legally exited, ANY ground
+        // contact outside the cage ends the point for the hitter
+        if (this.outPlay && !ev.inCourt) {
+          return this.pointOver(hitter, 'out-landed', 'Ball landed outside — winner!');
+        }
         if (onDefenderSide) {
           if (!this.legBounced) {
             this.legBounced = true;   // good ball — in
@@ -258,10 +267,14 @@ export class Referee {
           if (this.serveReturnPending) {
             return this.serveFault('Serve left the court after the bounce');
           }
-          // legally left the cage after bouncing (por tres / por cuatro)
-          return this.pointOver(hitter, 'exit-winner', 'Ball out of the court — winner!');
+          // legally left the cage (por tres / por cuatro) — still PLAYABLE:
+          // defenders may sprint out through the doors and return it before
+          // it touches the ground outside
+          this.outPlay = true;
+          this.cb.onMessage?.('Ball out — chase it through the door!');
+          return;
         }
-        return this.pointOver(1 - hitter, 'out', 'Out — over the cage');
+        return this.pointOver(1 - hitter, 'out', 'Out');
       }
     }
   }
