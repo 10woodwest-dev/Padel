@@ -83,8 +83,10 @@ G.trails = []; // one racket trail per player, rebuilt with the line-up
 G.replay = new ReplaySystem();
 G.nameTags = [];
 G.settings.lighting = 'day';
+G.settings.replays = 'highlights'; // 'highlights' | 'off' | 'all'
 G.replayShownForPoint = false;
 G.replayDelay = 0;
+G.pointStats = { hits: 0, smash: false };
 
 // aim reticle (human aiming target)
 const reticle = new THREE.Group();
@@ -217,7 +219,11 @@ function startSession(settings) {
     onPhase: (state) => {
       ui.updateScore({ scoring: G.scoring, match: G.match, names: teamNames() });
       G.debug.clearEvents();
-      if (state === 'positioning') { G.replay.clear(); G.replayShownForPoint = false; }
+      if (state === 'positioning') {
+        G.replay.clear();
+        G.replayShownForPoint = false;
+        G.pointStats = { hits: 0, smash: false };
+      }
       if (state === 'pointOver' || state === 'matchOver') G.audio.play('crowd', 0.55);
     },
     onShotFeedback: (t, q) => ui.showShotFeedback(t, q),
@@ -307,6 +313,8 @@ function resolveContact(player, contact) {
 
   G.ai.notifyTeamHit(player.team, contact.shot);
   G.lastStrike = { playerId: player.id, t: G.time };
+  G.pointStats.hits++;
+  if (contact.shot === 'smash' || contact.shot === 'vibora') G.pointStats.smash = true;
   // swinging costs a little energy
   player.stamina = Math.max(0, player.stamina - 1.2);
 
@@ -452,13 +460,23 @@ function frame(now) {
   G.cameraRig.update(dt, G.ball);
   updateNameTags();
 
-  // record footage while live; trigger the instant replay after the banner
+  // record footage while live; replay only HIGHLIGHT-worthy points (long
+  // rallies, smash/víbora finishes, out-of-court saves, game points) unless
+  // the pause-menu setting says otherwise
   if (G.match.state === 'live') G.replay.record(dt);
   if (G.match.state === 'pointOver' && G.match.mode === 'match' && !G.replayShownForPoint) {
     G.replayDelay += dt;
     if (G.replayDelay > 0.7) {
       G.replayShownForPoint = true;
-      if (G.replay.start()) {
+      const worthy = G.settings.replays === 'all' || (
+        G.settings.replays === 'highlights' && (
+          G.pointStats.hits >= 6 ||
+          (G.pointStats.smash && G.pointStats.hits >= 2) ||
+          G.referee.outPlay ||
+          G.match.pendingAdvance?.gameWon
+        )
+      );
+      if (worthy && G.replay.start()) {
         G.replayActive = true;
         ui.setReplayBadge(true);
       }
@@ -507,6 +525,7 @@ function handleGlobalKeys() {
           camera: G.cameraRig.mode,
           golden: G.scoring.goldenPoint,
           lighting: G.settings.lighting,
+          replays: G.settings.replays,
         },
         {
           onDifficulty: (d) => { G.settings.difficulty = d; G.ai.setDifficulty(d); },
@@ -516,6 +535,11 @@ function handleGlobalKeys() {
           onToggleLighting: () => {
             G.settings.lighting = G.settings.lighting === 'day' ? 'evening' : 'day';
             return setLightingPreset(scene, G.settings.lighting);
+          },
+          onCycleReplays: () => {
+            const order = ['highlights', 'off', 'all'];
+            G.settings.replays = order[(order.indexOf(G.settings.replays) + 1) % order.length];
+            return G.settings.replays;
           },
           onResume: () => { G.paused = false; ui.hidePauseMenu(); },
           onRestart: () => { G.paused = false; ui.hidePauseMenu(); G.match.begin(G.settings.mode); },

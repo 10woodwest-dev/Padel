@@ -221,6 +221,7 @@ export class UI {
           <button data-t="camera">Camera: ${state.camera}</button>
           <button data-t="golden">Deciding point: ${state.golden ? 'golden' : 'advantage'}</button>
           <button data-t="light">Lighting: ${state.lighting}</button>
+          <button data-t="replays">Replays: ${state.replays}</button>
         </div>
 
         <h2>Controls</h2>
@@ -251,6 +252,9 @@ export class UI {
     });
     ov.querySelector('[data-t="light"]').addEventListener('click', (e) => {
       e.target.textContent = `Lighting: ${handlers.onToggleLighting()}`;
+    });
+    ov.querySelector('[data-t="replays"]').addEventListener('click', (e) => {
+      e.target.textContent = `Replays: ${handlers.onCycleReplays()}`;
     });
     ov.querySelector('[data-a="resume"]').addEventListener('click', handlers.onResume);
     ov.querySelector('[data-a="restart"]').addEventListener('click', handlers.onRestart);
