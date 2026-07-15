@@ -101,4 +101,28 @@ export class Scoring {
   isGoldenPointNow() {
     return this.goldenPoint && this.points[0] >= 3 && this.points[1] >= 3;
   }
+
+  /** broadcast context: {team, label} for GAME/SET/MATCH POINT, or null */
+  situation() {
+    if (this.matchWinner !== null) return null;
+    if (this.isGoldenPointNow()) return { team: -1, label: 'GOLDEN POINT' };
+    const gamePointFor = (t) => {
+      if (this.inTieBreak) {
+        const p = this.tbPoints[t], q = this.tbPoints[1 - t];
+        return p >= 6 && p > q;
+      }
+      const p = this.points[t], q = this.points[1 - t];
+      return p >= 3 && p - q >= 1;
+    };
+    for (const t of [0, 1]) {
+      if (!gamePointFor(t)) continue;
+      const g = this.games[t], h = this.games[1 - t];
+      const winsSet = this.inTieBreak || (g + 1 >= RULES.gamesPerSet && g + 1 - h >= 2);
+      if (winsSet) {
+        return { team: t, label: this.sets[t] + 1 >= this.setsToWin ? 'MATCH POINT' : 'SET POINT' };
+      }
+      return { team: t, label: 'GAME POINT' };
+    }
+    return null;
+  }
 }

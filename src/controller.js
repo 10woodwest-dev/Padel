@@ -21,6 +21,7 @@
 
 import * as THREE from 'three';
 import { COURT, HIT } from './constants.js';
+import { SHOTS } from './shots.js';
 import { v3, clamp } from './mathUtils.js';
 
 export class HumanController {
@@ -94,6 +95,13 @@ export class HumanController {
       p.startSwing(shot, { ...this.aim }, power);
     }
     return actions;
+  }
+
+  /** HUD hint: what would Space do right now? */
+  peekShot(ctx) {
+    if (ctx.phase === 'preServe') return ctx.isServer ? 'Serve' : null;
+    if (ctx.phase !== 'live' || this.player.isSwinging()) return null;
+    return SHOTS[this.contextualStandard(ctx)]?.label ?? null;
   }
 
   // Standard shot context: overhead ball → bandeja; at the net → volley;

@@ -13,6 +13,7 @@
 // ============================================================================
 
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { PHYSICS, COLORS, RACKET } from './constants.js';
 import { v3, vCopy, vAdd, vSub, vScale, vDot, vNorm, vLen, clamp } from './mathUtils.js';
 import { RacketTrail, ImpactBursts } from './fx.js';
@@ -49,6 +50,15 @@ renderer.toneMappingExposure = 1.12;
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(COLORS.skyTop, 45, 110);
+
+// image-based ambient reflections — glass, rackets and skin pick up real
+// specular response (PMREM from a procedural room, no external assets)
+{
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.06).texture;
+  scene.environmentIntensity = 0.35;
+  pmrem.dispose();
+}
 
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 300);
 
@@ -159,6 +169,33 @@ function setupPlayers(humanId) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Match statistics (post-match screen)
+// ---------------------------------------------------------------------------
+function resetMatchStats() {
+  G.matchStats = {
+    aces: [0, 0], doubleFaults: [0, 0], winners: [0, 0], errors: [0, 0],
+    fastestServe: [0, 0], longestRally: 0,
+  };
+}
+
+function trackPointStats({ winner, reason }) {
+  if (G.match?.mode !== 'match') return;
+  const S = G.matchStats;
+  S.longestRally = Math.max(S.longestRally, G.pointStats.hits);
+  const winReasons = ['double-bounce', 'out-landed', 'returned-over', 'body'];
+  if (winReasons.includes(reason)) {
+    // untouched winning serve = ace
+    if (reason === 'double-bounce' && G.pointStats.hits === 0 && G.match.server.team === winner) {
+      S.aces[winner]++;
+    } else {
+      S.winners[winner]++;
+    }
+  } else {
+    S.errors[1 - winner]++;
+  }
+}
+
 function updateNameTags() {
   for (let i = 0; i < G.nameTags.length && i < G.players.length; i++) {
     const p = G.players[i];
@@ -206,8 +243,11 @@ function startSession(settings) {
 
   G.scoring = new Scoring({ goldenPoint: G.settings.golden });
   G.referee = new Referee({
-    onPointOver: (res) => G.match.handlePointOver(res),
-    onServeFault: (res) => G.match.handleServeFault(res),
+    onPointOver: (res) => { trackPointStats(res); G.match.handlePointOver(res); },
+    onServeFault: (res) => {
+      if (res.double && G.match.mode === 'match') G.matchStats.doubleFaults[G.match.server.team]++;
+      G.match.handleServeFault(res);
+    },
     onLet: (res) => G.match.handleLet(res),
     onMessage: (text) => ui.showMessage(text, 'info'),
   });
@@ -236,7 +276,9 @@ function startSession(settings) {
     onServeStruck: (srv) => {
       G.bursts.spawn(G.ball.pos, vNorm(G.ball.vel), srv.archetype.kit.accent ?? 0xffffff, 0.26);
       G.audio.play('hit', 0.5);
-      ui.showStat(`Serve · ${Math.round(vLen(G.ball.vel) * 3.6)} km/h`);
+      const sp = vLen(G.ball.vel);
+      ui.showStat(`Serve · ${Math.round(sp * 3.6)} km/h`);
+      if (sp > G.matchStats.fastestServe[srv.team]) G.matchStats.fastestServe[srv.team] = sp;
     },
   });
   G.ai = new AIManager(G.players, G.human, G.match, G.referee, G.ball, G.settings.difficulty);
@@ -246,6 +288,9 @@ function startSession(settings) {
   G.replayActive = false;
   G.replayShownForPoint = false;
   G.lastGamesSum = 0;
+  G.statsShown = false;
+  resetMatchStats();
+  ui.hideMatchStats();
 
   G.match.begin(G.settings.mode);
   ui.setHUDVisible(true);
@@ -414,15 +459,17 @@ function frame(now) {
     (Math.sign(G.ball.pos.z) === G.human.teamSign ||
       (Math.sign(G.ball.vel.z) === G.human.teamSign && Math.abs(G.ball.vel.z) > 0.5));
 
-  const actions = G.controller.update(dt, {
+  const ctx = {
     ball: G.ball,
     phase,
     isServer,
     serveSide: G.match.serveSide,
     ballIncoming,
     lastGlassOwnSide: G.time - G.lastGlassOwnSideAt < 1.6,
-  });
+  };
+  const actions = G.controller.update(dt, ctx);
   if (actions.serve) G.match.requestServe(G.controller.aim);
+  ui.setNextShot(G.controller.peekShot(ctx));
 
   G.ai.update(dt);
 
@@ -491,6 +538,18 @@ function frame(now) {
     }
   } else if (G.match.state !== 'pointOver') {
     G.replayDelay = 0;
+  }
+
+  // post-match stats screen (after the MATCH banner has had its moment)
+  if (G.match.state === 'matchOver' && !G.statsShown && G.match.stateTime > 2.2) {
+    G.statsShown = true;
+    ui.showMatchStats(
+      { names: teamNames(), winner: G.scoring.matchWinner, stats: G.matchStats },
+      {
+        onRematch: () => { G.statsShown = false; resetMatchStats(); G.match.begin(G.settings.mode); },
+        onMenu: () => showMenu(),
+      }
+    );
   }
 
   // footsteps: one soft thud per stride at speed

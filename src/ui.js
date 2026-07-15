@@ -37,7 +37,9 @@ export class UI {
         <div class="points">0 - 0</div>
         <div class="games"></div>
         <div class="serve-info"></div>
+        <div class="situation" style="display:none"></div>
       </div>
+      <div class="hud-next"></div>
       <div class="hud-message"></div>
       <div class="hud-feedback"></div>
       <div class="hud-stamina" style="display:none"><div class="fill"></div></div>
@@ -91,16 +93,29 @@ export class UI {
     this.root.querySelector('.team-name.t0').classList.toggle('serving', match.server.team === 0);
     this.root.querySelector('.team-name.t1').classList.toggle('serving', match.server.team === 1);
 
+    const sit = this.root.querySelector('.situation');
     if (match.mode === 'rally') {
       this.root.querySelector('.points').textContent = 'FREE RALLY';
       this.root.querySelector('.games').textContent = '';
+      sit.style.display = 'none';
     } else {
       this.root.querySelector('.points').textContent = scoring.pointsLabel();
       const sets = scoring.setHistory.map((s) => `${s[0]}-${s[1]}`).join('  ');
       this.root.querySelector('.games').textContent =
         `Games ${scoring.games[0]} - ${scoring.games[1]}${sets ? '   Sets ' + sets : ''}${scoring.inTieBreak ? '  ·  TIE-BREAK' : ''}`;
+      const s = scoring.situation();
+      sit.style.display = s ? '' : 'none';
+      if (s) sit.textContent = `★ ${s.label}${s.team >= 0 ? ' — ' + names[s.team] : ''}`;
     }
     this.updateServeInfo(match);
+  }
+
+  /** contextual "what Space will hit" hint */
+  setNextShot(label) {
+    const el = this.root.querySelector('.hud-next');
+    if (this._nextShot === label) return;
+    this._nextShot = label;
+    el.textContent = label ? `Space → ${label}` : '';
   }
 
   updateServeInfo(match) {
@@ -283,5 +298,39 @@ export class UI {
 
   hidePauseMenu() {
     this.root.querySelector('[data-pause]')?.remove();
+  }
+
+  // ---------- post-match stats ----------
+  showMatchStats({ names, winner, stats }, handlers) {
+    this.hideMatchStats();
+    const ov = document.createElement('div');
+    ov.className = 'overlay';
+    ov.dataset.stats = '1';
+    const row = (label, a, b) => `
+      <tr><td class="sv">${a}</td><td class="sl">${label}</td><td class="sv">${b}</td></tr>`;
+    ov.innerHTML = `
+      <div class="panel stats-panel">
+        <h1>MATCH <span>${winner === 0 ? names[0] : names[1]}</span></h1>
+        <div class="subtitle">win the match</div>
+        <table class="stats-table">
+          <tr class="head"><td>${names[0]}</td><td></td><td>${names[1]}</td></tr>
+          ${row('Aces', stats.aces[0], stats.aces[1])}
+          ${row('Double faults', stats.doubleFaults[0], stats.doubleFaults[1])}
+          ${row('Winners', stats.winners[0], stats.winners[1])}
+          ${row('Unforced errors', stats.errors[0], stats.errors[1])}
+          ${row('Fastest serve', stats.fastestServe[0] ? Math.round(stats.fastestServe[0] * 3.6) + ' km/h' : '—',
+    stats.fastestServe[1] ? Math.round(stats.fastestServe[1] * 3.6) + ' km/h' : '—')}
+          <tr><td class="sv" colspan="3">Longest rally: ${stats.longestRally} shots</td></tr>
+        </table>
+        <button class="big-btn">Rematch</button>
+        <button class="menu-btn">Back to start screen</button>
+      </div>`;
+    ov.querySelector('.big-btn').addEventListener('click', () => { ov.remove(); handlers.onRematch(); });
+    ov.querySelector('.menu-btn').addEventListener('click', () => { ov.remove(); handlers.onMenu(); });
+    this.root.appendChild(ov);
+  }
+
+  hideMatchStats() {
+    this.root.querySelector('[data-stats]')?.remove();
   }
 }

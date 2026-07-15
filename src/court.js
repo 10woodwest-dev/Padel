@@ -334,8 +334,8 @@ function addEnvironment(group) {
 // ---------------------------------------------------------------------------
 function addCrowd(group) {
   const stepMat = new THREE.MeshStandardMaterial({ color: 0x2c3a49, roughness: 0.95 });
-  const bodyGeo = new THREE.CapsuleGeometry(0.16, 0.32, 3, 6);
-  const headGeo = new THREE.SphereGeometry(0.09, 8, 6);
+  const bodyGeo = new THREE.CapsuleGeometry(0.135, 0.34, 3, 6);
+  const headGeo = new THREE.SphereGeometry(0.072, 8, 6);
   const palette = [0xc0392b, 0x2471a3, 0xf1c40f, 0x1e8449, 0x8e44ad, 0xe67e22, 0xecf0f1, 0x34495e, 0xd35400, 0x16a085];
   const skinTones = [0xc98d5f, 0xa9764c, 0xe0b089, 0x8d5a3a, 0xf1c8a0];
 

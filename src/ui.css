@@ -79,6 +79,27 @@ html, body, #app {
 }
 .hud-hints b { color: #b8cddd; font-weight: 600; }
 
+/* ---------- score situation + next-shot hint ---------- */
+.hud-score .situation {
+  margin-top: 4px; font-size: 11.5px; font-weight: 700; letter-spacing: 0.1em;
+  color: #ffd76e; text-transform: uppercase;
+}
+.hud-next {
+  position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
+  font-size: 12px; color: #9fb8cc; letter-spacing: 0.08em;
+  text-shadow: 0 1px 6px rgba(0,0,0,0.8);
+}
+
+/* ---------- post-match stats ---------- */
+.stats-panel { text-align: center; }
+.stats-table {
+  width: 100%; margin: 14px 0 6px; border-collapse: collapse; font-size: 14px;
+}
+.stats-table td { padding: 6px 10px; border-bottom: 1px solid rgba(150,190,220,0.12); }
+.stats-table .head td { color: #9fb8cc; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+.stats-table .sl { color: #8ba3b8; font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.06em; }
+.stats-table .sv { font-weight: 700; font-size: 16px; }
+
 /* ---------- broadcast stat line ---------- */
 .hud-stat {
   position: absolute; top: 33%; left: 50%; transform: translate(-50%, 0);
