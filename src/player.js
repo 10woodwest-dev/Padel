@@ -298,8 +298,23 @@ export class Player {
     if (!this.swing && this.state !== 'recover' && this.state !== 'swing') {
       this.setState(sp > 0.6 ? 'run' : 'idle', true);
     }
-    this.runPhase += sp * dt * 2.15;
     this.idleTime += dt;
+
+    // ---- split-step: the instant the ball starts coming toward our side,
+    // real players hop into a loaded stance — track the transition
+    const toward = !!(ball && ball.active &&
+      Math.sign(ball.vel.z) === this.teamSign && Math.abs(ball.vel.z) > 1.5 &&
+      Math.sign(ball.pos.z) !== this.teamSign);
+    if (toward && !this._prevToward) this.splitTimer = 0.28;
+    this._prevToward = toward;
+    this.splitTimer = Math.max(0, (this.splitTimer || 0) - dt);
+
+    // cadence: quick short steps when shuffling laterally, longer at a sprint
+    const moveYaw = sp > 0.4 ? Math.atan2(this.vel.x, this.vel.z) : this.facing;
+    const rel = angleDelta(this.facing, moveYaw);
+    this._lateral = clamp(Math.abs(Math.sin(rel)) * clamp(sp / 2.5, 0, 1), 0, 1);
+    this._shuffleDir = Math.sign(Math.sin(rel)) || 1;
+    this.runPhase += sp * dt * (2.15 + this._lateral * 1.5);
 
     this.updateSwingSeek(ball);
     this.updateModel(dt, ball);
@@ -401,14 +416,32 @@ export class Player {
 
     const sp = lenXZ(this.vel);
     const runAmt = clamp(sp / 4.5, 0, 1);
+    const lateral = this._lateral || 0;      // 1 = pure side-shuffle
+    const shufDir = this._shuffleDir || 1;
+    const split = this.splitTimer > 0 ? 1 : 0; // loaded split-step stance
     const phase = this.runPhase;
     const L = 1 - Math.exp(-14 * dt); // pose smoothing
 
-    // ---- pelvis: bob with the run cycle, breathe at rest, crouch when ready
-    const bob = Math.abs(Math.cos(phase)) * 0.045 * runAmt;
+    // ---- swing context (used for lunge & weight transfer below)
+    const p = this.swingPhase();
+    const swSide = this.swing ? this.swing.seekSide : 0;
+    const wide = this.swing
+      ? clamp((this.swing.seekR / this.reach() - 0.62) / 0.38, 0, 1) : 0;
+
+    // ---- pelvis: bob with the run cycle, breathe at rest, crouch when
+    // ready, sink into the split-step, shift weight through the swing
+    const bob = Math.abs(Math.cos(phase)) * (0.045 - lateral * 0.015) * runAmt;
     const breathe = Math.sin(this.idleTime * 1.9) * 0.008 * (1 - runAmt);
     const ready = this.state === 'idle' ? 0.035 : 0;
-    m.pelvis.position.y = lerp(m.pelvis.position.y, m.hipH - bob - ready + breathe, L);
+    const sink = split * 0.055;
+    m.pelvis.position.y = lerp(m.pelvis.position.y, m.hipH - bob - ready - sink + breathe, L);
+    // weight transfer: load the ball-side leg in the backswing, drive
+    // through toward the shot at contact
+    let weightX = 0;
+    if (this.swing && p !== null) {
+      weightX = swSide * lerp(0.07, -0.05, clamp(p, 0, 1)) * (0.5 + wide * 0.5);
+    }
+    m.pelvis.position.x = damp(m.pelvis.position.x, weightX, 10, dt);
 
     // lean into movement (world velocity → local)
     const cos = Math.cos(-this.facing), sin = Math.sin(-this.facing);
@@ -417,20 +450,23 @@ export class Player {
     m.pelvis.rotation.x = damp(m.pelvis.rotation.x, clamp(lvz * -0.045, -0.22, 0.22) + (this.state === 'idle' ? 0.06 : 0.1), 10, dt);
     m.pelvis.rotation.z = damp(m.pelvis.rotation.z, clamp(lvx * 0.05, -0.18, 0.18), 10, dt);
 
-    // ---- torso coil during swings, gentle counter-sway otherwise
-    let torsoYaw = Math.sin(phase) * 0.09 * runAmt;
-    let torsoPitch = 0.05 + runAmt * 0.08;
-    const p = this.swingPhase();
+    // ---- torso coil during swings, lunge-lean on wide balls, gentle
+    // counter-sway otherwise
+    let torsoYaw = Math.sin(phase) * (0.09 - lateral * 0.06) * runAmt;
+    let torsoPitch = 0.05 + runAmt * 0.08 + split * 0.05;
+    let torsoRoll = 0;
     if (this.swing && p !== null) {
-      const s = this.swing.seekSide;
+      const s = swSide;
       const coil = p < 0 ? 1 : clamp(1 - p * 1.6, -0.6, 1);
       torsoYaw = 0.55 * coil * s * (this.swing.overhead ? 0.5 : 1);
       if (this.swing.overhead) torsoPitch = p < 0.45 ? -0.12 : 0.18;
+      torsoRoll = -s * 0.3 * wide; // lean into a stretched/wide contact
     } else if (this.state === 'swing' || this.state === 'recover') {
       torsoYaw = damp(m.torso.rotation.y, 0, 6, dt);
     }
     m.torso.rotation.y = damp(m.torso.rotation.y, torsoYaw, 12, dt);
     m.torso.rotation.x = damp(m.torso.rotation.x, torsoPitch, 10, dt);
+    m.torso.rotation.z = damp(m.torso.rotation.z, torsoRoll, 10, dt);
 
     // ---- head tracks the ball (clamped) — a small thing that adds a lot of life
     if (ball && ball.active) {
@@ -446,13 +482,27 @@ export class Player {
       m.head.rotation.x = damp(m.head.rotation.x, 0, 6, dt);
     }
 
-    // ---- legs: run cycle with knees; ready = athletic bend
-    const kneeReady = this.state === 'idle' ? 0.55 : 0.35;
-    const hipSwing = Math.sin(phase) * 0.62 * runAmt;
-    const kneeR = Math.max(0, -Math.sin(phase + 0.6)) * 1.15 * runAmt + kneeReady * (1 - runAmt);
-    const kneeL = Math.max(0, Math.sin(phase + 0.6 + Math.PI) * -1) * 1.15 * runAmt + kneeReady * (1 - runAmt);
-    m.hipR.rotation.x = damp(m.hipR.rotation.x, hipSwing - kneeReady * 0.4 * (1 - runAmt), 16, dt);
-    m.hipL.rotation.x = damp(m.hipL.rotation.x, -hipSwing - kneeReady * 0.4 * (1 - runAmt), 16, dt);
+    // ---- legs: forward run cycle blended with a lateral SHUFFLE (padel
+    // players face the net and side-step), split-step load, lunge on wide
+    // contacts; ready = athletic bend
+    const kneeReady = (this.state === 'idle' ? 0.55 : 0.35) + split * 0.4;
+    const fwdAmt = runAmt * (1 - lateral * 0.85);
+    const hipSwing = Math.sin(phase) * 0.62 * fwdAmt;
+    // shuffle: legs abduct alternately (rotation.z), little forward swing
+    const shuf = lateral * runAmt;
+    const hipZShuf = Math.sin(phase) * 0.3 * shuf * shufDir;
+    // lunge: ball-side leg opens toward the ball, knee loaded
+    const lungeR = this.swing && swSide > 0 ? wide : 0;
+    const lungeL = this.swing && swSide < 0 ? wide : 0;
+
+    const kneeR = Math.max(0, -Math.sin(phase + 0.6)) * 1.15 * fwdAmt +
+      Math.abs(Math.sin(phase)) * 0.35 * shuf + kneeReady * (1 - runAmt) + lungeR * 0.45;
+    const kneeL = Math.max(0, Math.sin(phase + 0.6 + Math.PI) * -1) * 1.15 * fwdAmt +
+      Math.abs(Math.cos(phase)) * 0.35 * shuf + kneeReady * (1 - runAmt) + lungeL * 0.45;
+    m.hipR.rotation.x = damp(m.hipR.rotation.x, hipSwing - kneeReady * 0.4 * (1 - runAmt) - lungeR * 0.3, 16, dt);
+    m.hipL.rotation.x = damp(m.hipL.rotation.x, -hipSwing - kneeReady * 0.4 * (1 - runAmt) - lungeL * 0.3, 16, dt);
+    m.hipR.rotation.z = damp(m.hipR.rotation.z, -0.04 + hipZShuf - lungeR * 0.38, 14, dt);
+    m.hipL.rotation.z = damp(m.hipL.rotation.z, 0.04 + hipZShuf + lungeL * 0.38, 14, dt);
     m.kneeR.rotation.x = damp(m.kneeR.rotation.x, kneeR, 16, dt);
     m.kneeL.rotation.x = damp(m.kneeL.rotation.x, kneeL, 16, dt);
     // feet roughly parallel to ground
@@ -480,9 +530,10 @@ export class Player {
     // racket head world position = end of the forearm chain
     m.racketTip.getWorldPosition(this.racketWorld);
 
-    // ---- left arm: counterbalance
+    // ---- left arm: on the racket throat in the ready position (the classic
+    // padel two-hand hold), counterbalance during swings, pumping at a sprint
     if (this.swing && p !== null && !this.swing.overhead) {
-      const s = this.swing.seekSide;
+      const s = swSide;
       _v2.set(this.pos.x - Math.sin(this.facing + 0.9 * s) * 0.55,
         m.hipH + 0.45 + (p > 0 ? p * 0.2 : 0),
         this.pos.z - Math.cos(this.facing + 0.9 * s) * 0.55);
@@ -490,8 +541,13 @@ export class Player {
       // off arm points up at the ball during overheads
       _v2.set(this.pos.x + Math.sin(this.facing) * 0.5, m.hipH + 1.05 - clamp(p, 0, 1) * 0.5,
         this.pos.z + Math.cos(this.facing) * 0.5);
+    } else if (sp < 2.2) {
+      // hand on the racket throat (slight inward offset so it reads as a hold)
+      m.racketThroat.getWorldPosition(_v2);
+      _v2.x += Math.sin(this.facing - 1.9) * 0.05;
+      _v2.z += Math.cos(this.facing - 1.9) * 0.05;
     } else {
-      const pump = runAmt > 0.25 ? -Math.sin(phase) * 0.22 * runAmt : 0;
+      const pump = -Math.sin(phase) * 0.22 * runAmt;
       _v2.set(this.pos.x + Math.sin(this.facing - 0.5) * 0.42, m.hipH + 0.32 + pump * 0.4,
         this.pos.z + Math.cos(this.facing - 0.5) * 0.42);
     }
@@ -503,11 +559,11 @@ export class Player {
 // Ready-position racket target: held in front at waist-chest height.
 // ---------------------------------------------------------------------------
 function readyRacketTarget(player, out) {
-  const az = player.facing + 0.38;
+  const az = player.facing + 0.3;
   out.set(
-    player.pos.x + Math.sin(az) * 0.55,
-    player.model.hipH + 0.42,
-    player.pos.z + Math.cos(az) * 0.55
+    player.pos.x + Math.sin(az) * 0.52,
+    player.model.hipH + 0.5,   // racket up in front of the chest — padel ready
+    player.pos.z + Math.cos(az) * 0.52
   );
 }
 
@@ -665,34 +721,31 @@ export function buildPlayerModel(archetype) {
   const R = mkArm(1, armFLenR, true);
   const L = mkArm(-1, armFLenL, false);
 
-  // racket on the right wrist
+  // racket on the right wrist — a real padel racket: solid teardrop face
+  // with perforation holes, dark carbon frame, short grip + wrist strap
   const racket = new THREE.Group();
   racket.position.y = -R.fLen;
   racket.rotation.y = 0.45; // slight supination so the face reads from behind
   R.elbowG.add(racket);
-  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.02, 0.16, 8), dark);
-  grip.position.y = -0.08;
+  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.019, 0.15, 8), dark);
+  grip.position.y = -0.075;
   racket.add(grip);
-  const face = new THREE.Group();
-  face.position.y = -0.16 - 0.13;
-  racket.add(face);
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.125, 0.021, 8, 20), dark);
-  rim.rotation.y = Math.PI / 2;
-  rim.castShadow = true;
-  face.add(rim);
-  const faceMesh = new THREE.Mesh(
-    new THREE.CircleGeometry(0.115, 20),
-    new THREE.MeshStandardMaterial({
-      color: kit.accent ?? 0x777777, roughness: 0.9, side: THREE.DoubleSide,
-      transparent: true, opacity: 0.85,
-    })
-  );
-  faceMesh.rotation.y = Math.PI / 2;
-  face.add(faceMesh);
-  // the IK end effector — the centre of the racket head
+  const strap = new THREE.Mesh(new THREE.TorusGeometry(0.028, 0.006, 6, 12), dark);
+  strap.position.y = -0.01;
+  strap.rotation.x = Math.PI / 2;
+  racket.add(strap);
+  const padelFace = buildPadelRacketMesh(kit.accent ?? 0x777777);
+  padelFace.position.y = -0.15; // face grows from the throat downward
+  racket.add(padelFace);
+  padelFace.castShadow = true;
+  // the IK end effector — the centre of the racket head (matches armFLenR)
   const racketTip = new THREE.Object3D();
-  racketTip.position.copy(face.position);
+  racketTip.position.y = -0.29;
   racket.add(racketTip);
+  // throat marker: where the off hand rests in the padel ready position
+  const racketThroat = new THREE.Object3D();
+  racketThroat.position.y = -0.17;
+  racket.add(racketThroat);
 
   // ---- legs: hip group → knee group → foot
   const thighLen = 0.42 * s, shinLen = 0.4 * s;
@@ -741,6 +794,45 @@ export function buildPlayerModel(archetype) {
     shoulderL: L.shoulderG, elbowL: L.elbowG, armLLenU: armULen, armLLenF: armFLenL,
     hipR: legR.hipG, kneeR: legR.kneeG, footR: legR.footG,
     hipL: legL.hipG, kneeL: legL.kneeG, footL: legL.footG,
-    racket, racketTip,
+    racket, racketTip, racketThroat,
   };
+}
+
+// ---------------------------------------------------------------------------
+// A real padel racket face: rounded-teardrop outline extruded 38 mm with a
+// grid of perforation holes, coloured face + dark carbon edge. Drawn in XY
+// with the throat at the origin and the face extending down -Y (continuing
+// the grip axis), extrusion along Z (the hitting plane's normal).
+// ---------------------------------------------------------------------------
+function buildPadelRacketMesh(accentColor) {
+  const w = 0.115, l = 0.235; // half-width, face length
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0);
+  shape.bezierCurveTo(w * 0.8, -0.005, w, -l * 0.32, w, -l * 0.55);
+  shape.bezierCurveTo(w, -l * 0.94, w * 0.5, -l, 0, -l);
+  shape.bezierCurveTo(-w * 0.5, -l, -w, -l * 0.94, -w, -l * 0.55);
+  shape.bezierCurveTo(-w, -l * 0.32, -w * 0.8, -0.005, 0, 0);
+
+  // perforation holes on a grid, kept inside the outline with a margin
+  const holeR = 0.0055;
+  for (let gy = -l + 0.035; gy < -0.045; gy += 0.028) {
+    // approximate local half-width of the teardrop at this height
+    const t = -gy / l; // 0 at throat → 1 at tip
+    const half = w * (t < 0.55 ? 0.55 + t * 0.8 : 1.28 - t * 0.52) - 0.028;
+    for (let gx = -w; gx <= w; gx += 0.028) {
+      if (Math.abs(gx) > half) continue;
+      const hole = new THREE.Path();
+      hole.absarc(gx, gy, holeR, 0, Math.PI * 2, true);
+      shape.holes.push(hole);
+    }
+  }
+
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.036, bevelEnabled: true, bevelThickness: 0.004, bevelSize: 0.004,
+    bevelSegments: 1, curveSegments: 10,
+  });
+  geo.translate(0, 0, -0.018); // centre the thickness on the grip axis
+  const faceMat = new THREE.MeshStandardMaterial({ color: accentColor, roughness: 0.55, metalness: 0.15 });
+  const edgeMat = new THREE.MeshStandardMaterial({ color: 0x101216, roughness: 0.45, metalness: 0.3 });
+  return new THREE.Mesh(geo, [faceMat, edgeMat]);
 }
