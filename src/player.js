@@ -28,6 +28,8 @@ const _v1 = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
 const _v3 = new THREE.Vector3();
 const _v4 = new THREE.Vector3();
+const _v5 = new THREE.Vector3();
+const _v6 = new THREE.Vector3();
 const _q1 = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
 
@@ -509,25 +511,52 @@ export class Player {
     m.footR.rotation.x = damp(m.footR.rotation.x, -(m.hipR.rotation.x + m.kneeR.rotation.x) * 0.8, 16, dt);
     m.footL.rotation.x = damp(m.footL.rotation.x, -(m.hipL.rotation.x + m.kneeL.rotation.x) * 0.8, 16, dt);
 
-    // ---- racket arm: IK to the swing path (or a ready/pump position)
+    // ---- racket arm: IK the ARM to a hand position, then orient the racket
+    // from the hand toward its aim point — the wrist articulates, which is
+    // what keeps the arm looking human instead of a rigid pole.
     g.updateMatrixWorld(true);
+    m.shoulderR.getWorldPosition(_v6);
+
     if (this.swing && p !== null) {
+      // hand: racket-tip path point pulled back along shoulder→tip
       this.swingPathPoint(p, _v1);
-    } else if (this.state === 'recover') {
-      // ease back toward ready hold
-      readyRacketTarget(this, _v1);
-    } else if (runAmt > 0.25) {
-      // pumping arm while running, racket kept up-ish
-      const pump = Math.sin(phase) * 0.22 * runAmt;
-      readyRacketTarget(this, _v1);
-      _v1.y += pump * 0.4;
+      _v2.copy(_v1).sub(_v6).normalize();
+      _v1.addScaledVector(_v2, -m.racketLen * 0.9);
+      // racket aim: a slightly delayed/advanced path point → wrist lag in the
+      // backswing, release through contact
+      const pAim = p + (p < 0.45 ? -0.14 : 0.08);
+      this.swingPathPoint(pAim, _v5);
     } else {
-      readyRacketTarget(this, _v1);
-      _v1.y += Math.sin(this.idleTime * 1.9) * 0.015; // breathing
+      // ready hold: hand in front of the sternum, racket tip up-forward
+      const az = this.facing + 0.25;
+      const pump = runAmt > 0.25 ? Math.sin(phase) * 0.1 * runAmt : 0;
+      _v1.set(
+        this.pos.x + Math.sin(az) * 0.34,
+        m.hipH + 0.38 + pump + Math.sin(this.idleTime * 1.9) * 0.012 * (1 - runAmt),
+        this.pos.z + Math.cos(az) * 0.34
+      );
+      _v5.set(
+        this.pos.x + Math.sin(this.facing + 0.1) * 0.52,
+        m.hipH + 0.85,
+        this.pos.z + Math.cos(this.facing + 0.1) * 0.52
+      );
     }
     solveArmIK(m.shoulderR, m.elbowR, m.armRLenU, m.armRLenF, _v1, 1);
 
-    // racket head world position = end of the forearm chain
+    // orient the racket at the wrist toward the aim point (smoothed)
+    m.elbowR.updateWorldMatrix(true, false);
+    _v6.copy(_v5);
+    m.elbowR.worldToLocal(_v6);
+    _v6.sub(m.racket.position);
+    if (_v6.lengthSq() > 1e-6) {
+      _v6.normalize();
+      _q1.setFromUnitVectors(_v4.set(0, -1, 0), _v6);
+      _q2.setFromAxisAngle(_v4.set(0, 1, 0), 0.45); // grip supination
+      _q1.multiply(_q2);
+      m.racket.quaternion.slerp(_q1, 0.5);
+    }
+
+    // racket head world position (trails/velocity display)
     m.racketTip.getWorldPosition(this.racketWorld);
 
     // ---- left arm: on the racket throat in the ready position (the classic
@@ -553,18 +582,6 @@ export class Player {
     }
     solveArmIK(m.shoulderL, m.elbowL, m.armLLenU, m.armLLenF, _v2, -1);
   }
-}
-
-// ---------------------------------------------------------------------------
-// Ready-position racket target: held in front at waist-chest height.
-// ---------------------------------------------------------------------------
-function readyRacketTarget(player, out) {
-  const az = player.facing + 0.3;
-  out.set(
-    player.pos.x + Math.sin(az) * 0.52,
-    player.model.hipH + 0.5,   // racket up in front of the chest — padel ready
-    player.pos.z + Math.cos(az) * 0.52
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -615,8 +632,8 @@ function solveArmIK(shoulder, elbow, Lu, Lf, targetWorld, sideSign) {
     _q2.setFromAxisAngle(_v1, twist);
     _q1.premultiply(_q2);
   }
-  shoulder.quaternion.slerp(_q1, 0.55); // slight smoothing keeps it organic
-  elbow.rotation.x += (bend - elbow.rotation.x) * 0.6;
+  shoulder.quaternion.slerp(_q1, 0.45); // smoothing keeps arm motion organic
+  elbow.rotation.x += (bend - elbow.rotation.x) * 0.55;
 }
 
 function signedAngleAround(from, to, axis) {
@@ -692,9 +709,13 @@ export function buildPlayerModel(archetype) {
 
   // ---- arms (two-bone: shoulder group → elbow group). The racket is a rigid
   // extension of the RIGHT forearm; the IK treats forearm+racket as one bone.
+  // arm bones end at the HAND — the racket articulates separately at the
+  // wrist (oriented per-frame toward its aim point), which is what makes the
+  // arms read as natural instead of a rigid arm+racket pole
   const armULen = 0.30 * s;
-  const armFLenL = 0.27 * s;         // left hand
-  const armFLenR = 0.27 * s + 0.29;  // right forearm + racket to head centre (racket size is constant)
+  const armFLenL = 0.27 * s;
+  const armFLenR = 0.27 * s;
+  const RACKET_LEN = 0.29; // hand → face centre
 
   const mkArm = (side, forearmLen, withRacket) => {
     const shoulderG = new THREE.Group();
@@ -794,7 +815,7 @@ export function buildPlayerModel(archetype) {
     shoulderL: L.shoulderG, elbowL: L.elbowG, armLLenU: armULen, armLLenF: armFLenL,
     hipR: legR.hipG, kneeR: legR.kneeG, footR: legR.footG,
     hipL: legL.hipG, kneeL: legL.kneeG, footL: legL.footG,
-    racket, racketTip, racketThroat,
+    racket, racketTip, racketThroat, racketLen: RACKET_LEN,
   };
 }
 
