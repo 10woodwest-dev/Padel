@@ -78,7 +78,10 @@ export class HumanController {
     const lobHeld = inp.held('ShiftLeft') || inp.held('ShiftRight');
 
     if (ctx.phase === 'preServe' && ctx.isServer) {
-      if (shotPressed) actions.serve = true;   // main.js runs the bounce→hit serve
+      // manual serve: press starts the drop, release strikes (time the apex!)
+      if (shotPressed) actions.serve = true;
+      if (inp.wasReleased('Space') || (!inp.mouseHeld(0) && this._lmbServeHeld)) actions.serveRelease = true;
+      this._lmbServeHeld = inp.mouseHeld(0);
       return actions;
     }
 
@@ -108,6 +111,8 @@ export class HumanController {
   // ball just came off our glass and we're deep → wall return; else topspin.
   contextualStandard(ctx) {
     const p = this.player, ball = ctx.ball;
+    // outside the cage only a lob clears the walls back in
+    if (Math.abs(p.pos.x) > COURT.halfWidth) return 'lob';
     if (this.overheadPossible(ctx)) return 'bandeja';
     if (this.nearNet()) return 'volley';
     if (ctx.lastGlassOwnSide && Math.abs(p.pos.z) > COURT.serviceLineZ - 0.5) return 'wallDefence';

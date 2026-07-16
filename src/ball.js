@@ -121,14 +121,19 @@ export function stepBall(state, dt, events = [], deterministic = false) {
   collideFloor(state, events, deterministic);
   if (state.insideCage) {
     collideWalls(state, prev, events, deterministic);
-  } else if (
-    // a ball played back from OUTSIDE re-arms the cage once it is clearly
-    // inside the court volume again (below wall height)
-    Math.abs(pos.x) < COURT.halfWidth - 0.15 &&
-    Math.abs(pos.z) < COURT.halfLength - 0.15 &&
-    pos.y < COURT.backTotalHeight - 0.1
-  ) {
-    state.insideCage = true;
+  } else {
+    // outside: the cage EXTERIOR is solid too — an out-of-court return must
+    // genuinely clear the walls or thread the doorway
+    collideWallsExterior(state, prev, events, deterministic);
+    if (
+      // played back inside: re-arm interior collisions once clearly in the
+      // court volume below wall height
+      Math.abs(pos.x) < COURT.halfWidth - 0.15 &&
+      Math.abs(pos.z) < COURT.halfLength - 0.15 &&
+      pos.y < COURT.backTotalHeight - 0.1
+    ) {
+      state.insideCage = true;
+    }
   }
 
   return events;
@@ -277,6 +282,54 @@ function markOut(state, events) {
 }
 
 // ---------------------------------------------------------------------------
+// Cage exterior — same wall bands, normals pointing OUTWARD. Emits
+// 'exterior' events (touching the outside of the court structure is a fault
+// during out-of-court play). Doorways and above-wall space pass through.
+// ---------------------------------------------------------------------------
+function collideWallsExterior(state, prev, events, deterministic) {
+  const { pos } = state;
+  const r = BALL.radius;
+
+  // back walls z = ±10 approached from |z| > 10
+  for (const s of [1, -1]) {
+    const plane = s * COURT.halfLength;
+    const dPrev = s * (prev.z - plane);
+    const dNow = s * (pos.z - plane);
+    if (dPrev > r && dNow <= r) {
+      const t = (dPrev - r) / (dPrev - dNow);
+      const yHit = prev.y + (pos.y - prev.y) * t;
+      const xHit = prev.x + (pos.x - prev.x) * t;
+      if (Math.abs(xHit) > COURT.halfWidth + r) continue; // beside the cage
+      const band = backWallBand(yHit);
+      if (!band) continue;                                // clears the wall
+      pos.z = plane + s * r;
+      const surf = BALL.surfaces[band];
+      bounce(state, v3(0, 0, s), surf, deterministic ? 0 : (surf.normalJitter || 0));
+      events.push({ type: 'exterior', pos: vCopy(pos), side: s });
+    }
+  }
+
+  // side walls x = ±5 approached from |x| > 5
+  for (const s of [1, -1]) {
+    const plane = s * COURT.halfWidth;
+    const dPrev = s * (prev.x - plane);
+    const dNow = s * (pos.x - plane);
+    if (dPrev > r && dNow <= r) {
+      const t = (dPrev - r) / (dPrev - dNow);
+      const yHit = prev.y + (pos.y - prev.y) * t;
+      const zHit = prev.z + (pos.z - prev.z) * t;
+      if (Math.abs(zHit) > COURT.halfLength + r) continue;
+      const band = sideWallBand(yHit, zHit);
+      if (!band) continue;                                // door or above
+      pos.x = plane + s * r;
+      const surf = BALL.surfaces[band];
+      bounce(state, v3(s, 0, 0), surf, deterministic ? 0 : (surf.normalJitter || 0));
+      events.push({ type: 'exterior', pos: vCopy(pos), side: zHit >= 0 ? 1 : -1 });
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Net — segment test against the z = 0 plane below the (sagging) cord height.
 // Body hit: ball dies into the net and drops on the incoming side.
 // Band clip: deflected, play continues (rules decide legality by what happens
@@ -350,17 +403,41 @@ export function predictTrajectory(from, { maxTime = 3.5, sampleEvery = 0.03, sto
 }
 
 // ---------------------------------------------------------------------------
-// Visuals — bright ball, soft blob shadow (readability!), landing marker ring
-// and a short motion trail.
+// Visuals — bright ball with a seam texture (spin reads!), soft blob shadow,
+// landing marker ring and a short motion trail.
 // ---------------------------------------------------------------------------
+function makeBallTexture() {
+  const c = document.createElement('canvas');
+  c.width = 128; c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = '#d8f24b';
+  g.fillRect(0, 0, 128, 64);
+  g.strokeStyle = '#f6fbe0';
+  g.lineWidth = 5;
+  // tennis-ball seam approximation on the equirect map
+  g.beginPath();
+  for (let x = 0; x <= 128; x++) {
+    const y = 32 + Math.sin((x / 128) * Math.PI * 2) * 17;
+    x === 0 ? g.moveTo(x, y) : g.lineTo(x, y);
+  }
+  g.stroke();
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
 export class BallVisual {
   constructor(scene) {
     this.mesh = new THREE.Mesh(
       new THREE.SphereGeometry(BALL.radius * 1.35, 20, 16), // slightly oversized for readability
-      new THREE.MeshStandardMaterial({ color: 0xd8f24b, emissive: 0x6a7a12, emissiveIntensity: 0.55, roughness: 0.55 })
+      new THREE.MeshStandardMaterial({
+        map: makeBallTexture(),
+        emissive: 0x6a7a12, emissiveIntensity: 0.35, roughness: 0.55,
+      })
     );
     this.mesh.castShadow = true;
     scene.add(this.mesh);
+    this._spinQ = new THREE.Quaternion();
+    this._spinAxis = new THREE.Vector3();
 
     this.blob = new THREE.Mesh(
       new THREE.CircleGeometry(0.09, 20),
@@ -391,6 +468,14 @@ export class BallVisual {
   update(state, dt) {
     const p = state.pos;
     this.mesh.position.set(p.x, p.y, p.z);
+
+    // visible ball rotation from the real spin (scaled down for readability)
+    const sMag = vLen(state.spin);
+    if (sMag > 2 && dt > 0) {
+      this._spinAxis.set(state.spin.x / sMag, state.spin.y / sMag, state.spin.z / sMag);
+      this._spinQ.setFromAxisAngle(this._spinAxis, Math.min(0.5, sMag * dt * 0.25));
+      this.mesh.quaternion.premultiply(this._spinQ);
+    }
     // blob shadow: fades and shrinks with height
     this.blob.position.set(p.x, 0.005, p.z);
     const h = clamp(p.y, 0, 6);

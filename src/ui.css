@@ -79,6 +79,39 @@ html, body, #app {
 }
 .hud-hints b { color: #b8cddd; font-weight: 600; }
 
+/* ---------- serve meter ---------- */
+.serve-meter {
+  position: absolute; bottom: 18%; left: calc(50% + 120px);
+  width: 14px; height: 130px;
+  background: rgba(10, 16, 24, 0.75);
+  border: 1px solid rgba(150, 190, 220, 0.35);
+  border-radius: 7px;
+}
+.serve-meter .sm-sweet {
+  position: absolute; left: 0; right: 0;
+  bottom: 37%; height: 26%;
+  background: rgba(120, 220, 120, 0.35);
+  border-top: 1px solid rgba(160, 240, 160, 0.7);
+  border-bottom: 1px solid rgba(160, 240, 160, 0.7);
+}
+.serve-meter .sm-ball {
+  position: absolute; left: 50%; transform: translate(-50%, 50%);
+  width: 10px; height: 10px; border-radius: 50%;
+  background: #d8f24b; box-shadow: 0 0 6px rgba(216, 242, 75, 0.8);
+}
+.serve-meter .sm-label {
+  position: absolute; top: -20px; left: 50%; transform: translateX(-50%);
+  white-space: nowrap; font-size: 10px; color: #9fb8cc; letter-spacing: 0.06em;
+}
+
+/* ---------- minimap ---------- */
+.hud-minimap {
+  position: absolute; right: 16px; top: 88px;
+  border: 1px solid rgba(150, 190, 220, 0.3);
+  border-radius: 8px;
+  opacity: 0.9;
+}
+
 /* ---------- score situation + next-shot hint ---------- */
 .hud-score .situation {
   margin-top: 4px; font-size: 11.5px; font-weight: 700; letter-spacing: 0.1em;

@@ -14,7 +14,7 @@
 // ============================================================================
 
 import { COURT } from './constants.js';
-import { v3, vCopy, rand } from './mathUtils.js';
+import { v3, vCopy, rand, clamp } from './mathUtils.js';
 import { resetBall } from './ball.js';
 import { executeShot, computeShotQuality } from './shots.js';
 
@@ -160,15 +160,25 @@ export class Match {
   }
 
   // --- the underarm serve: drop → bounce → strike below the waist ----------
-  /** called by human controller (Space) or AI; aim must be inside the box */
-  requestServe(aim) {
+  /** called by human controller (Space) or AI; aim must be inside the box.
+   *  manual=true (human): the strike waits for releaseServe() — release near
+   *  the top of the bounce for the best contact. AI serves automatically. */
+  requestServe(aim, manual = false) {
     if (this.state !== 'preServe' || this.serveStage) return;
     this.serveStage = 'drop';
     this.serveDropTime = 0;
     this.serveAim = vCopy(aim);
     this.serveBounced = false;
+    this.serveManual = manual;
+    this.serveReleased = false;
     // release the ball from the hand — real padel: bounce it, hit it underarm
     resetBall(this.ball, this.ball.pos, v3(0, -0.4, 0), v3());
+  }
+
+  /** manual serve: the player commits to the strike NOW */
+  releaseServe() {
+    if (this.serveStage !== 'drop' || !this.serveManual) return;
+    this.serveReleased = true;
   }
 
   /** ball events during the drop are watched to time the underarm strike.
@@ -201,16 +211,28 @@ export class Match {
     }
     if (!this.serveBounced && this.serveDropTime < 2) return;
     const ball = this.ball;
-    // strike near the apex of the bounce (must be below the waist — it is,
-    // the bounce apex from a hand drop is ~0.45 m). The 2 s timeout is a
-    // safety net so a degenerate drop can never soft-lock the serve.
-    if ((ball.vel.y <= 0.25 && ball.pos.y > 0.2) || this.serveDropTime >= 2) {
+    // AUTO (AI): strike near the apex of the bounce.
+    // MANUAL (human): strike the moment the player releases — contact height
+    // vs the ~0.45 m sweet spot decides the timing quality. A 2.4 s timeout
+    // keeps a held/forgotten serve from soft-locking the point.
+    const auto = !this.serveManual;
+    const timedOut = this.serveDropTime >= (auto ? 2 : 2.4);
+    const apexNow = ball.vel.y <= 0.25 && ball.pos.y > 0.2;
+    const strike = auto ? (apexNow || timedOut) : (this.serveReleased || timedOut);
+    if (strike) {
+      // manual timing: perfect at the top of the bounce, weak when scooped
+      // early/low or let drop too far
+      let timing = 0.85;
+      if (!auto) {
+        timing = timedOut ? 0.5 :
+          clamp(0.55 + 0.45 * (1 - Math.abs(ball.pos.y - 0.45) / 0.4), 0.35, 1);
+      }
       this.serveDropTime = 0;
       const srv = this.server;
       const q = computeShotQuality({
         shot: 'serve',
-        timing: 0.85,               // automated toss → consistent contact
-        ballHeight: ball.pos.y,
+        timing,
+        ballHeight: Math.max(0.15, ball.pos.y),
         playerSpeed: 0,
         facingError: 0,
         stamina: srv.stamina,

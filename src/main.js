@@ -77,6 +77,8 @@ setLightingPreset(scene, 'day'); // bright daylight by default; toggle in pause
 const input = new Input(canvas);
 const ui = new UI(document.getElementById('ui-root'));
 
+const SETTINGS_KEY = 'padel-settings';
+
 const G = {
   players: [], human: null, controller: null,
   ball: createBallState(), ballVisual: new BallVisual(scene),
@@ -97,9 +99,20 @@ G.replay = new ReplaySystem();
 G.nameTags = [];
 G.settings.lighting = 'day';
 G.settings.replays = 'highlights'; // 'highlights' | 'off' | 'all'
+G.settings.sets = '1';             // '1' | '3' (best of 3)
 G.replayShownForPoint = false;
 G.replayDelay = 0;
 G.pointStats = { hits: 0, smash: false };
+G.targets = null; // free-rally practice rings
+
+// remembered settings from previous sessions
+try {
+  Object.assign(G.settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'));
+} catch { /* fresh start */ }
+function saveSettings() {
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(G.settings)); } catch { /* private mode */ }
+}
+setLightingPreset(scene, G.settings.lighting); // apply the remembered preset
 
 // aim reticle (human aiming target)
 const reticle = new THREE.Group();
@@ -241,7 +254,11 @@ function startSession(settings) {
   G.settings = { ...G.settings, ...settings };
   setupPlayers(G.settings.humanId);
 
-  G.scoring = new Scoring({ goldenPoint: G.settings.golden });
+  saveSettings();
+  G.scoring = new Scoring({
+    goldenPoint: G.settings.golden,
+    setsToWin: G.settings.sets === '3' ? 2 : 1,
+  });
   G.referee = new Referee({
     onPointOver: (res) => { trackPointStats(res); G.match.handlePointOver(res); },
     onServeFault: (res) => {
@@ -254,13 +271,13 @@ function startSession(settings) {
   G.match = new Match(G.players, G.ball, G.referee, G.scoring, {
     onMessage: (text, kind) => ui.showMessage(text, kind),
     onScore: () => {
-      ui.updateScore({ scoring: G.scoring, match: G.match, names: teamNames() });
+      ui.updateScore({ scoring: G.scoring, match: G.match, names: teamNames(), targets: G.targets?.score ?? null });
       // little sting when a game is won
       const games = G.scoring.games[0] + G.scoring.games[1] + G.scoring.sets[0] * 6 + G.scoring.sets[1] * 6;
       if (games !== G.lastGamesSum) { G.lastGamesSum = games; G.audio.play('game', 0.7); }
     },
     onPhase: (state) => {
-      ui.updateScore({ scoring: G.scoring, match: G.match, names: teamNames() });
+      ui.updateScore({ scoring: G.scoring, match: G.match, names: teamNames(), targets: G.targets?.score ?? null });
       G.debug.clearEvents();
       if (state === 'positioning') {
         G.replay.clear();
@@ -293,10 +310,59 @@ function startSession(settings) {
   ui.hideMatchStats();
 
   G.match.begin(G.settings.mode);
+  setupTargets(G.settings.mode === 'rally');
   ui.setHUDVisible(true);
   G.running = true;
   G.paused = false;
   G.audio.init(); // Play click is a user gesture — safe to create AudioContext
+}
+
+// ---------------------------------------------------------------------------
+// Free-rally target practice: glowing rings on the opponent court; land a
+// ball inside one to score and it hops to a new spot.
+// ---------------------------------------------------------------------------
+function setupTargets(on) {
+  if (G.targets) {
+    for (const r of G.targets.rings) scene.remove(r);
+    G.targets = null;
+  }
+  if (!on) return;
+  const rings = [];
+  for (let i = 0; i < 2; i++) {
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.42, 0.6, 28),
+      new THREE.MeshBasicMaterial({ color: 0xffd76e, transparent: true, opacity: 0.75, depthWrite: false, side: THREE.DoubleSide })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(0, 0.015, 0);
+    scene.add(ring);
+    rings.push(ring);
+    relocateTarget(ring);
+  }
+  G.targets = { rings, score: 0 };
+}
+
+function relocateTarget(ring) {
+  const oppSign = -G.human.teamSign;
+  ring.position.x = (Math.random() * 8 - 4);
+  ring.position.z = oppSign * (1.8 + Math.random() * 6.8);
+}
+
+function checkTargets(ev) {
+  if (!G.targets || ev.type !== 'floor' || !ev.inCourt) return;
+  if (Math.sign(ev.pos.z) === G.human.teamSign) return;
+  for (const ring of G.targets.rings) {
+    const d = Math.hypot(ev.pos.x - ring.position.x, ev.pos.z - ring.position.z);
+    if (d < 0.62) {
+      G.targets.score++;
+      G.bursts.spawn({ x: ring.position.x, y: 0.1, z: ring.position.z }, v3(0, 1, 0), 0xffd76e, 0.5);
+      G.audio.play('game', 0.6);
+      ui.showStat(`Target! · ${G.targets.score}`);
+      relocateTarget(ring);
+      ui.updateScore({ scoring: G.scoring, match: G.match, names: teamNames(), targets: G.targets.score });
+      break;
+    }
+  }
 }
 
 function showMenu() {
@@ -395,6 +461,7 @@ function handleBallEvents(events) {
     if (ev.type === 'glass' && ev.side === G.human.teamSign) {
       G.lastGlassOwnSideAt = G.time;
     }
+    checkTargets(ev);
     // sound + spark per surface (intensity from ball speed)
     const speed = vLen(G.ball.vel);
     const k = clamp(speed / 22, 0.15, 1);
@@ -468,8 +535,13 @@ function frame(now) {
     lastGlassOwnSide: G.time - G.lastGlassOwnSideAt < 1.6,
   };
   const actions = G.controller.update(dt, ctx);
-  if (actions.serve) G.match.requestServe(G.controller.aim);
+  if (actions.serve) G.match.requestServe(G.controller.aim, true); // manual: release to strike
+  if (actions.serveRelease) G.match.releaseServe();
   ui.setNextShot(G.controller.peekShot(ctx));
+  // serve-timing meter while the human's drop is live
+  ui.setServeMeter(
+    G.match.serveStage === 'drop' && G.match.serveManual ? clamp(G.ball.pos.y / 0.9, 0, 1) : null
+  );
 
   G.ai.update(dt);
 
@@ -514,6 +586,7 @@ function frame(now) {
   if ((frameCount & 7) === 0) G.ballVisual.showLanding(G.ball);
   G.cameraRig.update(dt, G.ball);
   updateNameTags();
+  if ((frameCount & 1) === 0) ui.drawMinimap(G.players, G.ball, G.human.teamSign);
 
   // record footage while live; replay only HIGHLIGHT-worthy points (long
   // rallies, smash/víbora finishes, out-of-court saves, game points) unless
@@ -595,17 +668,19 @@ function handleGlobalKeys() {
           replays: G.settings.replays,
         },
         {
-          onDifficulty: (d) => { G.settings.difficulty = d; G.ai.setDifficulty(d); },
+          onDifficulty: (d) => { G.settings.difficulty = d; G.ai.setDifficulty(d); saveSettings(); },
           onToggleDebug: () => G.debug.toggle(),
           onToggleCamera: () => { G.cameraRig.toggle(); return G.cameraRig.mode; },
-          onToggleGolden: () => { G.scoring.goldenPoint = !G.scoring.goldenPoint; G.settings.golden = G.scoring.goldenPoint; return G.scoring.goldenPoint; },
+          onToggleGolden: () => { G.scoring.goldenPoint = !G.scoring.goldenPoint; G.settings.golden = G.scoring.goldenPoint; saveSettings(); return G.scoring.goldenPoint; },
           onToggleLighting: () => {
             G.settings.lighting = G.settings.lighting === 'day' ? 'evening' : 'day';
+            saveSettings();
             return setLightingPreset(scene, G.settings.lighting);
           },
           onCycleReplays: () => {
             const order = ['highlights', 'off', 'all'];
             G.settings.replays = order[(order.indexOf(G.settings.replays) + 1) % order.length];
+            saveSettings();
             return G.settings.replays;
           },
           onResume: () => { G.paused = false; ui.hidePauseMenu(); },

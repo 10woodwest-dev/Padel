@@ -7,6 +7,7 @@ export class Input {
   constructor(canvas) {
     this.down = new Set();       // currently-held key codes
     this.pressed = new Set();    // keys that went down since last endFrame()
+    this.released = new Set();   // keys that went up since last endFrame()
     this.mouse = { x: 0, y: 0 }; // NDC (-1..1)
     this.mouseDown = new Set();
     this.mousePressed = new Set();
@@ -18,7 +19,10 @@ export class Input {
       if (!this.down.has(e.code)) this.pressed.add(e.code);
       this.down.add(e.code);
     });
-    window.addEventListener('keyup', (e) => this.down.delete(e.code));
+    window.addEventListener('keyup', (e) => {
+      if (this.down.has(e.code)) this.released.add(e.code);
+      this.down.delete(e.code);
+    });
     window.addEventListener('blur', () => { this.down.clear(); this.mouseDown.clear(); });
 
     canvas.addEventListener('mousemove', (e) => {
@@ -37,9 +41,10 @@ export class Input {
 
   held(code) { return this.down.has(code); }
   wasPressed(code) { return this.pressed.has(code); }
+  wasReleased(code) { return this.released.has(code); }
   mouseHeld(btn) { return this.mouseDown.has(btn); }
   mouseWasPressed(btn) { return this.mousePressed.has(btn); }
 
   /** call once per rendered frame, after all consumers have polled */
-  endFrame() { this.pressed.clear(); this.mousePressed.clear(); }
+  endFrame() { this.pressed.clear(); this.mousePressed.clear(); this.released.clear(); }
 }

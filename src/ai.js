@@ -344,6 +344,13 @@ export class AIManager {
     const cand = [];
     const add = (shot, w) => { if (w > 0.01) cand.push({ shot, w }); };
 
+    // playing from OUTSIDE the cage: only a high lob clears the walls
+    if (Math.abs(p.pos.x) > COURT.halfWidth) {
+      add('lob', 3);
+      const aim = this.chooseAim('lob', p, opps);
+      return { shot: 'lob', aim, power: clamp(0.7 + rand(-0.05, 0.15), 0.3, 1) };
+    }
+
     if (!overheadOk) {
       add('drive', (nearNet ? 0.4 : 1.0) * (0.7 + st('consistency') * 0.5) * agg);
       add('topspin', (nearNet ? 0.5 : 1.25) * (0.7 + st('consistency') * 0.5));

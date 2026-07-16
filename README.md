@@ -25,7 +25,7 @@ and player on the start screen and press **Play**.
 |---|---|
 | **W A S D** | Move (momentum-based — you accelerate, brake and turn, no gliding) |
 | **Mouse** (or arrow keys) | Aim reticle on the opponent court |
-| **Space / Left click** | Standard shot — context-aware: topspin drive, volley at the net, bandeja on high balls, wall return off your glass. Also starts the serve. |
+| **Space / Left click** | Standard shot — context-aware: topspin drive, volley at the net, bandeja on high balls, wall return off your glass. Serving: **hold** to bounce the ball, **release at the top of the bounce** (meter on screen) for the best contact. |
 | **Shift + shot** | Lob / high defensive shot |
 | **F / Right click** | Attacking shot — smash when the ball is overhead, flat drive otherwise |
 | **E** | Bandeja / víbora overhead (auto-picks by contact height & player style) |
@@ -70,10 +70,16 @@ the HUD tells you *late / off balance / bad contact / good / perfect*.
 - **Modes & UX**: match mode, free-rally mode, start screen, pause menu, score
   HUD with serve indicator, fault/let/point messages, shot-quality feedback,
   stamina bar, landing marker, debug overlay.
-- **Presentation**: daylight/evening lighting presets (pause menu), broadcast
-  instant replay after every point (Space to skip), floating player name tags,
-  synthesized audio (racket/bounce/glass/mesh/net, footsteps, crowd reactions,
-  game-won stings), camera impact shake on smashes.
+- **Presentation**: daylight/evening lighting presets (pause menu), highlight
+  instant replays with real swings and rotating cinematic angles (Space to
+  skip), letterboxing, crowd grandstands, floating player name tags, minimap
+  radar, serve-speed & rally-length readouts, GAME/SET/MATCH POINT banners,
+  post-match stats screen with rematch, synthesized audio (racket, bounces,
+  glass, mesh, net, footsteps, crowd, stings), camera impact shake.
+- **Depth**: manual serve timing meter (hold/release), honest out-of-court
+  physics (cage exterior is solid — outside returns must clear the walls or
+  thread the door), best-of-3 option, free-rally target practice, settings
+  remembered between sessions.
 
 ## Roster
 

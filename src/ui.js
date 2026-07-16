@@ -50,6 +50,12 @@ export class UI {
       <div class="hud-debug" style="display:none"></div>
       <div class="hud-replay" style="display:none">REPLAY &nbsp;·&nbsp; Space to skip</div>
       <div class="hud-stat"></div>
+      <div class="serve-meter" style="display:none">
+        <div class="sm-sweet"></div>
+        <div class="sm-ball"></div>
+        <div class="sm-label">release at the top</div>
+      </div>
+      <canvas class="hud-minimap" width="132" height="228"></canvas>
       <div class="lb-top"></div>
       <div class="lb-bottom"></div>
     `;
@@ -84,10 +90,12 @@ export class UI {
     this.elScore.style.display = v ? '' : 'none';
     this.elStam.style.display = v ? '' : 'none';
     this.elHints.style.display = v ? '' : 'none';
+    this.root.querySelector('.hud-minimap').style.display = v ? '' : 'none';
+    if (!v) { this.setServeMeter(null); this.setNextShot(null); }
   }
 
   // ---------- score ----------
-  updateScore({ scoring, match, names }) {
+  updateScore({ scoring, match, names, targets = null }) {
     this.root.querySelector('.team-name.t0').textContent = names[0];
     this.root.querySelector('.team-name.t1').textContent = names[1];
     this.root.querySelector('.team-name.t0').classList.toggle('serving', match.server.team === 0);
@@ -95,8 +103,9 @@ export class UI {
 
     const sit = this.root.querySelector('.situation');
     if (match.mode === 'rally') {
-      this.root.querySelector('.points').textContent = 'FREE RALLY';
-      this.root.querySelector('.games').textContent = '';
+      this.root.querySelector('.points').textContent =
+        targets != null ? `FREE RALLY · Targets ${targets}` : 'FREE RALLY';
+      this.root.querySelector('.games').textContent = 'Hit the glowing rings for points';
       sit.style.display = 'none';
     } else {
       this.root.querySelector('.points').textContent = scoring.pointsLabel();
@@ -108,6 +117,52 @@ export class UI {
       if (s) sit.textContent = `★ ${s.label}${s.team >= 0 ? ' — ' + names[s.team] : ''}`;
     }
     this.updateServeInfo(match);
+  }
+
+  /** serve-timing meter: hNorm = ball height / 0.9, null hides */
+  setServeMeter(hNorm) {
+    const el = this.root.querySelector('.serve-meter');
+    if (hNorm === null) { el.style.display = 'none'; return; }
+    el.style.display = '';
+    el.querySelector('.sm-ball').style.bottom = `${hNorm * 100}%`;
+  }
+
+  /** top-down radar: court, players, ball */
+  drawMinimap(players, ball, humanTeamSign) {
+    const c = this.root.querySelector('.hud-minimap');
+    const g = c.getContext('2d');
+    const W = c.width, H = c.height;
+    g.clearRect(0, 0, W, H);
+    // world → map: x∈[-6.5,6.5] → [0,W], z∈[-11,11] → [0,H] (human side bottom)
+    const mx = (x) => (x + 6.5) / 13 * W;
+    const mz = (z) => (z * humanTeamSign + 11) / 22 * H;
+    // court + boxes
+    g.fillStyle = 'rgba(10,16,24,0.55)';
+    g.fillRect(0, 0, W, H);
+    g.strokeStyle = 'rgba(220,235,245,0.75)';
+    g.lineWidth = 1;
+    g.strokeRect(mx(-5), mz(-10), mx(5) - mx(-5), mz(10) - mz(-10));
+    g.beginPath();
+    g.moveTo(mx(-5), mz(0)); g.lineTo(mx(5), mz(0)); // net
+    g.moveTo(mx(-5), mz(-6.95)); g.lineTo(mx(5), mz(-6.95));
+    g.moveTo(mx(-5), mz(6.95)); g.lineTo(mx(5), mz(6.95));
+    g.moveTo(mx(0), mz(-6.95)); g.lineTo(mx(0), mz(6.95));
+    g.stroke();
+    // players
+    for (const p of players) {
+      g.fillStyle = p.isHuman ? '#eaff6e' : (p.team === 0 ? '#9fd86e' : '#f0876e');
+      g.beginPath();
+      g.arc(mx(p.pos.x), mz(p.pos.z), p.isHuman ? 4 : 3.2, 0, Math.PI * 2);
+      g.fill();
+    }
+    // ball (ring grows with height)
+    if (ball.active) {
+      g.strokeStyle = '#ffe94d';
+      g.lineWidth = 1.6;
+      g.beginPath();
+      g.arc(mx(ball.pos.x), mz(ball.pos.z), 2.4 + Math.min(3, ball.pos.y * 0.7), 0, Math.PI * 2);
+      g.stroke();
+    }
   }
 
   /** contextual "what Space will hit" hint */
@@ -158,6 +213,7 @@ export class UI {
     const sel = {
       mode: defaults.mode, difficulty: defaults.difficulty,
       golden: defaults.golden, humanId: defaults.humanId,
+      sets: defaults.sets ?? '1',
     };
     ov.innerHTML = `
       <div class="panel">
@@ -166,8 +222,14 @@ export class UI {
 
         <h2>Game mode</h2>
         <div class="option-row" data-k="mode">
-          <button data-v="match">Match (1 set)</button>
-          <button data-v="rally">Free rally</button>
+          <button data-v="match">Match</button>
+          <button data-v="rally">Free rally (target practice)</button>
+        </div>
+
+        <h2>Match length</h2>
+        <div class="option-row" data-k="sets">
+          <button data-v="1">One set</button>
+          <button data-v="3">Best of 3</button>
         </div>
 
         <h2>AI difficulty</h2>

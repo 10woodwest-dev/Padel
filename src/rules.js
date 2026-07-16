@@ -140,6 +140,7 @@ export class Referee {
       case 'net':
         return this.serveFault('Serve into the net');
       case 'out':
+      case 'exterior':
         return this.serveFault('Serve out of the court');
       case 'glass':
       case 'mesh':
@@ -259,6 +260,17 @@ export class Referee {
         }
         return; // own glass — legal ("contra pared")
       }
+
+      case 'exterior':
+        // the ball touched the OUTSIDE of the court structure.
+        // - during out-of-court play on the attacker's ball: it's dead
+        //   outside before any return → attacker wins (like landing outside)
+        // - on an outside RETURN (fresh leg): the return failed to clear the
+        //   cage → the outside hitter loses
+        if (this.outPlay) {
+          return this.pointOver(hitter, 'out-landed', 'Ball dead outside — winner!');
+        }
+        return this.pointOver(1 - hitter, 'exterior', 'Ball hit the outside of the cage');
 
       case 'out': {
         if (this.legBounced) {
