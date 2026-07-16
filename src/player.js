@@ -99,9 +99,13 @@ export class Player {
   contactRadius() { return this.isHuman ? RACKET.contactRadius : RACKET.contactRadiusAI; }
 
   // --- swing lifecycle ---------------------------------------------------------
-  /** Begin a swing: the racket will travel a ball-seeking arc; the sim loop
-   *  calls tryContact() each physics step while the window is open. */
-  startSwing(shotKey, aim, power = 0.6) {
+  /** Begin a swing. By default the swing is ARMED (buffered): the player
+   *  coils into the backswing and holds; the sweep releases when
+   *  triggerSwing() fires (main.js times it against the ball's predicted
+   *  arrival) — so pressing early no longer means whiffing. `immediate`
+   *  (AI, or when the ball is already on top of the player) starts the
+   *  sweep right away. */
+  startSwing(shotKey, aim, power = 0.6, immediate = false) {
     // one swing at a time, and no re-arming during follow-through/recovery —
     // otherwise mashing the button lets you hit your own outgoing ball
     if (this.swing || this.inRecovery()) return false;
@@ -109,7 +113,9 @@ export class Player {
     const overhead = def.tags.includes('overhead');
     this.swing = {
       shot: shotKey, aim, power,
+      stage: immediate ? 'swinging' : 'armed',
       elapsed: 0,
+      armTime: 0,
       windup: HIT.windup * (overhead ? 1.5 : 1),
       window: HIT.activeWindow,
       done: false,
@@ -123,13 +129,23 @@ export class Player {
     return true;
   }
 
+  /** release an armed swing — the sweep begins now */
+  triggerSwing() {
+    if (this.swing && this.swing.stage === 'armed') {
+      this.swing.stage = 'swinging';
+      this.swing.elapsed = 0;
+    }
+  }
+
   cancelSwing() { this.swing = null; }
 
   /** advance the swing clock — called every PHYSICS SUBSTEP by main.js so
    *  contact timing is frame-rate independent (the rendered arm follows the
    *  same analytic path, one frame behind at most) */
   advanceSwing(dt) {
-    if (this.swing) this.swing.elapsed += dt;
+    if (!this.swing) return;
+    if (this.swing.stage === 'armed') this.swing.armTime += dt;
+    else this.swing.elapsed += dt;
   }
 
   /** Racket-based contact test against the ANALYTIC racket-head position on
@@ -139,21 +155,22 @@ export class Player {
    *  physical exit blend. Returns contact info or null. */
   tryContact(ballPos, ballVel = null) {
     const sw = this.swing;
-    if (!sw || sw.done) return null;
+    if (!sw || sw.done || sw.stage !== 'swinging') return null;
     if (sw.elapsed < sw.windup) return null;
     const def = SHOTS[sw.shot];
 
     // ball must be on our side of the net (no reaching over in padel)
     if (Math.sign(ballPos.z) !== this.teamSign && Math.abs(ballPos.z) > 0.05) return null;
 
-    // legality/height window per shot (you can dig low balls, at a cost)
-    const maxH = sw.overhead ? this.overheadReach() : def.contact[2] + 0.4;
-    const minH = Math.max(0.03, def.contact[0] - 0.25);
+    // legality/height window per shot — generous: you can stretch up to
+    // ~2 m even on a groundstroke (quality suffers via the height factor)
+    const maxH = sw.overhead ? this.overheadReach() : Math.max(def.contact[2] + 0.4, 2.05);
+    const minH = Math.max(0.03, def.contact[0] - 0.3);
     if (ballPos.y > maxH || ballPos.y < minH) return null;
 
     // contact only lands while the sweep is passing through the zone
     const p = (sw.elapsed - sw.windup) / sw.window;
-    if (p < 0.08 || p > 1.0) return null;
+    if (p < 0.05 || p > 1.05) return null;
 
     // analytic racket head at this instant, seeking the LIVE ball (matches
     // updateSwingSeek's clamps, evaluated at substep precision)
@@ -210,21 +227,27 @@ export class Player {
     };
   }
 
-  /** swing-arc point for arbitrary seek params (plain object out) */
+  /** Swing-arc point for arbitrary seek params — a REAL stroke shape:
+   *  groundstrokes loop the racket back and DOWN (racket drop), accelerate
+   *  low-to-high through contact and wrap up across the body; slices come
+   *  high-to-low; overheads scratch behind the back, whip up to the contact
+   *  point and follow through downward. Contact (p≈0.45) always passes
+   *  exactly through the seek point, so forgiveness is unaffected. */
   _pathPoint(p, seek, sw) {
     const s = seek.side;
     const pc = clamp(p, -0.35, 1.45);
     let az, r, h;
     if (sw.overhead) {
-      az = seek.az + (pc - 0.45) * 0.7 * s;
-      r = seek.r * lerp(0.55, 1.0, clamp(pc + 0.3, 0, 1));
-      h = seek.h + (0.45 - pc) * 1.15;
+      az = seek.az + s * curveLerp(pc, [[-0.35, 0.5], [0.45, 0], [1.45, -0.4]]);
+      h = seek.h + curveLerp(pc, [[-0.35, -0.85], [0.1, -0.3], [0.45, 0], [1.0, -0.7], [1.45, -1.05]]);
+      r = seek.r * curveLerp(pc, [[-0.35, 0.45], [0.45, 1.0], [1.45, 0.7]]);
     } else {
-      az = seek.az + (0.45 - pc) * 2.2 * s;
-      r = seek.r * lerp(0.7, 1.0, Math.sin(clamp(pc, 0, 1) * Math.PI) * 0.55 + 0.45);
-      const shotDef = SHOTS[sw.shot];
-      const rise = shotDef.spinTop >= 0 ? 0.55 : -0.3;
-      h = seek.h + (pc - 0.45) * rise;
+      az = seek.az + s * curveLerp(pc, [[-0.35, 1.35], [0, 1.05], [0.45, 0], [1.0, -0.85], [1.45, -1.15]]);
+      const slice = SHOTS[sw.shot].spinTop < 0;
+      h = seek.h + (slice
+        ? curveLerp(pc, [[-0.35, 0.42], [0, 0.34], [0.45, 0], [1.0, -0.12], [1.45, 0.06]])
+        : curveLerp(pc, [[-0.35, 0.16], [0, -0.3], [0.45, 0], [1.0, 0.42], [1.45, 0.62]]));
+      r = seek.r * curveLerp(pc, [[-0.35, 0.6], [0, 0.68], [0.45, 1.0], [1.0, 0.62], [1.45, 0.5]]);
     }
     return {
       x: this.pos.x + Math.sin(az) * r,
@@ -241,10 +264,14 @@ export class Player {
   update(dt, ball = null) {
     this.stateTime += dt;
 
-    // ---- swing timeline (elapsed is advanced per PHYSICS SUBSTEP by
+    // ---- swing timeline (clocks are advanced per PHYSICS SUBSTEP by
     // advanceSwing(); here we only handle the state transitions)
     if (this.swing) {
-      if (!this.swing.done && this.swing.elapsed > this.swing.windup + this.swing.window) {
+      if (this.swing.stage === 'armed' && this.swing.armTime > HIT.armTimeout) {
+        this.swing = null;               // ball never came — relax
+        this.setState('recover');
+      } else if (this.swing.stage === 'swinging' &&
+        !this.swing.done && this.swing.elapsed > this.swing.windup + this.swing.window) {
         this.swing = null;               // whiffed
         this.setState('recover');
         this.stateTime = -(HIT.whiffRecover - HIT.recoverTime);
@@ -374,31 +401,15 @@ export class Player {
     }
   }
 
-  /** Racket-head world position along the swing arc.
-   *  p < 0 → backswing hold; p ∈ [0,1] → active sweep; p > 1 → follow-through. */
+  /** Racket-head world position along the swing arc (visual — uses the
+   *  cached seek params; the contact test recomputes seek from the live
+   *  ball at substep precision but shares the same _pathPoint shape). */
   swingPathPoint(p, out) {
     const sw = this.swing;
-    const s = sw.seekSide;
-    const pc = clamp(p, -0.35, 1.45);
-    let az, r, h;
-    if (sw.overhead) {
-      // overhead: racket travels high-behind → up-over → down-through
-      az = sw.seekAz + (pc - 0.45) * 0.7 * s;
-      r = sw.seekR * lerp(0.55, 1.0, clamp(pc + 0.3, 0, 1));
-      h = sw.seekH + (0.45 - pc) * 1.15;
-    } else {
-      // groundstroke/volley: horizontal arc through the contact azimuth
-      az = sw.seekAz + (0.45 - pc) * 2.2 * s;
-      r = sw.seekR * lerp(0.7, 1.0, Math.sin(clamp(pc, 0, 1) * Math.PI) * 0.55 + 0.45);
-      const shotDef = SHOTS[sw.shot];
-      const rise = shotDef.spinTop >= 0 ? 0.55 : -0.3; // topspin brushes up, slice cuts down
-      h = sw.seekH + (pc - 0.45) * rise;
-    }
-    out.set(
-      this.pos.x + Math.sin(az) * r,
-      clamp(h, 0.1, 3.4),
-      this.pos.z + Math.cos(az) * r
-    );
+    const pt = this._pathPoint(p, {
+      az: sw.seekAz, r: sw.seekR, h: sw.seekH, side: sw.seekSide,
+    }, sw);
+    out.set(pt.x, pt.y, pt.z);
     return out;
   }
 
@@ -406,6 +417,7 @@ export class Player {
   swingPhase() {
     const sw = this.swing;
     if (!sw) return null;
+    if (sw.stage === 'armed') return -0.35;  // coiled, waiting for the ball
     if (sw.elapsed < sw.windup) return -0.35 + 0.35 * (sw.elapsed / sw.windup);
     return (sw.elapsed - sw.windup) / sw.window;
   }
@@ -663,6 +675,18 @@ function signedAngleAround(from, to, axis) {
   const cross = _v3.crossVectors(from, to);
   const angle = Math.atan2(cross.dot(axis), from.dot(to));
   return angle;
+}
+
+/** piecewise-linear curve: pts = [[p0,v0],[p1,v1],...] sorted by p */
+function curveLerp(p, pts) {
+  if (p <= pts[0][0]) return pts[0][1];
+  for (let i = 1; i < pts.length; i++) {
+    if (p <= pts[i][0]) {
+      const [p0, v0] = pts[i - 1], [p1, v1] = pts[i];
+      return v0 + (v1 - v0) * (p - p0) / (p1 - p0);
+    }
+  }
+  return pts[pts.length - 1][1];
 }
 
 // ---------------------------------------------------------------------------

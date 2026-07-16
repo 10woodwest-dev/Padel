@@ -15,7 +15,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { PHYSICS, COLORS, RACKET } from './constants.js';
-import { v3, vCopy, vAdd, vSub, vScale, vDot, vNorm, vLen, clamp } from './mathUtils.js';
+import { v3, vCopy, vAdd, vSub, vScale, vDot, vNorm, vLen, clamp, distXZ } from './mathUtils.js';
 import { RacketTrail, ImpactBursts } from './fx.js';
 import { GameAudio } from './audio.js';
 import { buildCourt, setLightingPreset } from './court.js';
@@ -538,6 +538,38 @@ function frame(now) {
   if (actions.serve) G.match.requestServe(G.controller.aim, true); // manual: release to strike
   if (actions.serveRelease) G.match.releaseServe();
   ui.setNextShot(G.controller.peekShot(ctx));
+
+  // ---- buffered-swing auto release: the human's armed swing fires so the
+  // sweep meets the ball's predicted arrival (press early, still connect)
+  {
+    const hs = G.human.swing;
+    if (hs && hs.stage === 'armed' && G.ball.active) {
+      const pred = G.ai.getPrediction();
+      let eta = null;
+      if (pred) {
+        // on serve return the ball must bounce first
+        let minT = 0;
+        if (G.referee.phase === 'serveFlight' && G.human.team !== G.referee.servingTeam) {
+          const fb = pred.events.find((e) => e.type === 'floor' && e.side === G.human.teamSign);
+          minT = fb ? fb.t + 0.02 : Infinity;
+        }
+        for (const s of pred.samples) {
+          if (s.t < minT) continue;
+          if (Math.sign(s.pos.z) !== G.human.teamSign) continue;
+          if (s.pos.y < 0.1 || s.pos.y > G.human.overheadReach()) continue;
+          const d = Math.hypot(s.pos.x - G.human.pos.x, s.pos.z - G.human.pos.z);
+          if (d <= G.human.reach() * 1.05) { eta = s.t; break; }
+        }
+      }
+      const lead = hs.windup + hs.window * 0.42;
+      // last-moment fallback: generous radius so a slow frame can't skip the
+      // whole release window
+      const ballNow = Math.sign(G.ball.pos.z) === G.human.teamSign &&
+        distXZ(G.human.pos, G.ball.pos) < G.human.reach() * 1.35 &&
+        G.ball.pos.y < G.human.overheadReach();
+      if ((eta !== null && eta <= lead) || ballNow) G.human.triggerSwing();
+    }
+  }
   // serve-timing meter while the human's drop is live
   ui.setServeMeter(
     G.match.serveStage === 'drop' && G.match.serveManual ? clamp(G.ball.pos.y / 0.9, 0, 1) : null

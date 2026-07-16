@@ -238,7 +238,7 @@ export class Match {
         stamina: srv.stamina,
         statValue: srv.stats.consistency,
       });
-      srv.startSwing('serve', this.serveAim, 0.6);
+      srv.startSwing('serve', this.serveAim, 0.6, true);
       if (srv.swing) { srv.swing.done = true; srv.setState('swing'); } // visual only
       executeShot(ball, {
         shot: 'serve',

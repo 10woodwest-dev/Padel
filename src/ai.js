@@ -284,7 +284,7 @@ export class AIManager {
       const early = Math.min(Math.max(dt, Math.abs(reactNoise)), HIT.activeWindow * 0.35);
       if (eta <= lead + early) {
         const { shot, aim, power } = this.chooseShot(p, micro.intercept);
-        p.startSwing(shot, aim, power);
+        p.startSwing(shot, aim, power, true); // AI times its own release
       }
     }
     // emergency late swing if the ball is suddenly on top of us
@@ -297,7 +297,7 @@ export class AIManager {
         this.ball.pos.y < p.overheadReach() && this.ball.pos.y > 0.1) {
         const fake = { pos: vCopy(this.ball.pos), vel: vCopy(this.ball.vel), t: 0 };
         const { shot, aim, power } = this.chooseShot(p, fake);
-        p.startSwing(shot, aim, power);
+        p.startSwing(shot, aim, power, true);
       }
     }
   }

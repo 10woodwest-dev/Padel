@@ -126,8 +126,8 @@ export const MOVE = {
 // contact is mostly intent; poor contact lets physics take over, and
 // off-centre contact deflects the ball off line.
 export const RACKET = {
-  contactRadius: 0.34,      // racket-head sphere that must meet the ball (human)
-  contactRadiusAI: 0.40,    // hidden AI assist so rallies stay alive
+  contactRadius: 0.44,      // racket-head sphere that must meet the ball (human)
+  contactRadiusAI: 0.46,    // hidden AI assist so rallies stay alive
   restitution: 0.42,        // how much incoming pace survives the reflection
   power: 1.05,              // racket-head speed contribution along the face
   assistBase: 0.62,         // intent weight at quality 0
@@ -144,7 +144,8 @@ export const HIT = {
   windup: 0.10,          // s between button press and swing becoming "active"
   activeWindow: 0.24,    // s the swing can connect
   recoverTime: 0.38,     // s of reduced control after a swing
-  whiffRecover: 0.5,     // s penalty after swinging at nothing
+  whiffRecover: 0.35,    // s penalty after swinging at nothing
+  armTimeout: 2.5,       // s an armed (buffered) swing waits for the ball
   volleyMaxDistFromNet: 4.2, // heuristic: hits nearer the net auto-count as volleys
   bodyRadius: 0.26,      // ball striking the body (not racket) loses the point
   bodyHeight: 1.9,

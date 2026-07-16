@@ -153,7 +153,7 @@ export class ReplaySystem {
   _applyGhostSwing(p, snap, ph) {
     if (!p.swing || !p.swing.ghost) {
       p.swing = {
-        ghost: true, done: false,
+        ghost: true, done: false, stage: 'swinging',
         shot: snap.sh || 'drive', aim: { x: 0, y: 0, z: 0 }, power: 0.6,
         windup: HIT.windup, window: HIT.activeWindow,
         seekAz: snap.az, seekR: snap.r, seekH: snap.h, seekSide: snap.sd,

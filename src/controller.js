@@ -95,7 +95,12 @@ export class HumanController {
 
     if (shot) {
       const power = this.autoPower(shot);
-      p.startSwing(shot, { ...this.aim }, power);
+      // ball already on top of us → swing NOW; otherwise the swing arms
+      // (backswing hold) and main.js releases it to meet the ball
+      const ball = ctx.ball;
+      const close = ball.active && Math.sign(ball.pos.z) === p.teamSign &&
+        Math.hypot(ball.pos.x - p.pos.x, ball.pos.z - p.pos.z) < p.reach() * 1.2;
+      p.startSwing(shot, { ...this.aim }, power, close);
     }
     return actions;
   }
